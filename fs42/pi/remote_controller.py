@@ -180,7 +180,7 @@ def show_channel_entry(digits):
     """Put the number typed so far up on the TV, with a blinking cursor for the next digit."""
     def post():
         try:
-            requests.post(f'{FS42_BASE_URL}/player/channel_entry/{digits}', timeout=2)
+            api.post(f'{FS42_BASE_URL}/player/channel_entry/{digits}', timeout=2)
         except Exception as e:
             print(f"Channel entry display error: {e}")
     # off the input thread, so typing never waits on the player
@@ -283,9 +283,8 @@ def show_guide_pressed():
         response = api.post(f'{FS42_BASE_URL}/player/channels/guide')
         if response.ok:
             print("Guide displayed")
-            if current_channel is not None:
-                last_channel = current_channel
-                print(f"Stored last_channel: {last_channel} before guide")
+            # last_channel is left alone: closing the guide goes back to the channel it
+            # was opened from, so BACK afterwards should still go to the one before that
         else:
             print("Guide command failed")
     except Exception as e:
@@ -296,13 +295,13 @@ def send_menu_digit_if_open(number):
     """While the settings menu is up, a number key types into it (a ZIP code)
     instead of changing channel."""
     try:
-        status_response = requests.get(f'{FS42_BASE_URL}/player/status', timeout=2)
+        status_response = api.get(f'{FS42_BASE_URL}/player/status', timeout=2)
         if not status_response.ok:
             return False
         status = status_response.json()
         if not status.get("settings_menu"):
             return False
-        response = requests.post(f'{FS42_BASE_URL}/ppv/{status["channel_number"]}/key/{number}', timeout=2)
+        response = api.post(f'{FS42_BASE_URL}/ppv/{status["channel_number"]}/key/{number}', timeout=2)
         if response.ok:
             print(f"Settings menu digit entered: {number}")
             return True
@@ -319,7 +318,7 @@ def show_settings_pressed():
         return  # Debounced - ignore this press
 
     try:
-        response = requests.post(f'{FS42_BASE_URL}/player/channels/settings')
+        response = api.post(f'{FS42_BASE_URL}/player/channels/settings')
         if response.ok:
             print("Settings menu toggled")
         else:
@@ -334,7 +333,7 @@ def show_info_pressed():
         return  # Debounced - ignore this press
 
     try:
-        response = requests.post(f'{FS42_BASE_URL}/player/banner')
+        response = api.post(f'{FS42_BASE_URL}/player/banner')
         if response.ok:
             print("Channel banner toggled")
         else:
@@ -499,10 +498,10 @@ def close_if_open():
     before it - or from an on-demand movie, back to its menu. Returns whether one was up."""
     global current_channel
     try:
-        status = requests.get(f'{FS42_BASE_URL}/player/status', timeout=2).json()
+        status = api.get(f'{FS42_BASE_URL}/player/status', timeout=2).json()
         if not (status.get("guide") or status.get("settings_menu") or status.get("content_type") == "on_demand"):
             return False
-        if requests.post(f'{FS42_BASE_URL}/player/channels/close', timeout=2).ok:
+        if api.post(f'{FS42_BASE_URL}/player/channels/close', timeout=2).ok:
             print("Closed the guide/menu - back to the channel")
             # the player knows which channel that is; look it up next time it matters
             current_channel = None
@@ -529,6 +528,19 @@ def last_channel_pressed():
         return
 
     global current_channel, last_channel
+    # the channel may have changed without this remote seeing it - tuned from the
+    # guide, the web remote, or back from the guide - so ask the player what's on
+    try:
+        actual = api.get(f'{FS42_BASE_URL}/player/status', timeout=2).json().get('channel_number')
+        if actual is not None and actual != current_channel:
+            if current_channel is not None:
+                last_channel = current_channel
+            current_channel = actual
+    except Exception as e:
+        print(f"Could not check the current channel: {e}")
+    if last_channel is not None and last_channel == current_channel:
+        print(f"Already on last channel {last_channel}")
+        return
     if last_channel is not None:
         try:
             print(f"Switching to last channel: {last_channel}")
@@ -1089,7 +1101,7 @@ def trick_pressed(action):
     if not should_allow_press(action):
         return
     try:
-        response = requests.post(f'{FS42_BASE_URL}/player/trick/{action}', timeout=2)
+        response = api.post(f'{FS42_BASE_URL}/player/trick/{action}', timeout=2)
         print(f"Trick play {action}: {'sent' if response.ok else response.status_code}")
     except Exception as e:
         print(f"Trick play error for {action}: {e}")

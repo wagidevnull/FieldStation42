@@ -303,7 +303,9 @@ class StationPlayer:
     # Audio Normalization: ffmpeg's dynamic normalizer, which follows the loudness gently
     # over a few seconds (no pumping), boosts quiet audio at most 10x and keeps peaks
     # clear of clipping. Labelled, so it can be found and removed again.
-    NORMALIZE_AF = "@fs42norm:lavfi=[dynaudnorm=f=400:g=21:p=0.89:m=10:s=0]"
+    # b=1: mpv restarts the filter for every file, and without it dynaudnorm fades its gain
+    # in over the first seconds and out over the last - each ad went quiet, loud, quiet
+    NORMALIZE_AF = "@fs42norm:lavfi=[dynaudnorm=f=400:g=21:p=0.89:m=10:s=0:b=1]"
 
     def apply_audio_normalize(self):
         """Add or remove the normalization filter to match the setting."""
