@@ -13,3 +13,6 @@ jsonschema
 requests
 mutagen
 evdev
+# reads YouTube playlists (titles and lengths) for YouTube playlist channels;
+# the distro yt-dlp goes stale quickly and stops being able to read them
+yt-dlp>=2026.8.19

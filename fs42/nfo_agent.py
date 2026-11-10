@@ -232,6 +232,10 @@ def _run_overlay_app(lines, play_duration, show_seconds, overlay_cfg):
     sys.exit(app.exec())
 
 
+# .nfo sidecars FS42 keeps itself, for videos whose own folder it doesn't write to
+LOCAL_NFO_DIR = "runtime/nfo"
+
+
 class NFOAgent:
     """Static utility for NFO sidecar files and their now-playing overlay."""
 
@@ -341,7 +345,11 @@ class NFOAgent:
         nfo_path = os.path.splitext(file_path)[0] + ".nfo"
 
         if not os.path.exists(nfo_path):
-            return None
+            # no sidecar next to the file (it may live on a server FS42 shouldn't
+            # write to) - FS42 keeps its own in runtime/nfo, by the video's file name
+            nfo_path = os.path.join(LOCAL_NFO_DIR, os.path.splitext(os.path.basename(file_path))[0] + ".nfo")
+            if not os.path.exists(nfo_path):
+                return None
 
         try:
             with open(nfo_path, "r", encoding="utf-8") as f:

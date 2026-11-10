@@ -1,8 +1,11 @@
+import os
+import re
 from fastapi import APIRouter, HTTPException, status
 from datetime import datetime
 from fs42.station_manager import StationManager
 from fs42.liquid_api import LiquidAPI
 from fs42.metadata_io import MetadataIO
+from fs42 import youtube_channel
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -107,11 +110,33 @@ def _attach_meta_batch(by_station):
                 block.meta = metas[path]
 
 
+# "Show - S06E16 - Episode Title" style file names
+_EPISODE_FILENAME = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,3})(?:-?[Ee]\d{1,3})*(?:\s+-\s+(.+))?$")
+
+
+def _filename_episode_meta(block):
+    """Episode info parsed from the file name, for files without an .nfo sidecar."""
+    content = getattr(block, "content", None)
+    path = getattr(content, "path", None) if content is not None and not isinstance(content, list) else None
+    if not path:
+        return None
+    m = _EPISODE_FILENAME.search(os.path.splitext(os.path.basename(path))[0])
+    if not m:
+        return None
+    return {
+        "type": "episode",
+        "show_title": block.title,
+        "title": (m.group(3) or "").strip() or None,
+        "season": int(m.group(1)),
+        "episode": int(m.group(2)),
+    }
+
+
 def _listing_projection(blocks, include_meta):
     # only get the stuff we need
     listings = []
     for block in blocks:
-        meta = getattr(block, "meta", None)
+        meta = getattr(block, "meta", None) or (_filename_episode_meta(block) if include_meta else None)
         listing = {
             "title": MetadataIO.pick_title(meta) or block.title,
             "start_time": block.start_time.isoformat(),
@@ -143,6 +168,9 @@ def get_all_schedules(start: str = None, end: str = None, include_meta: bool = F
     _attach_meta_batch(by_station)
 
     schedules = {name: _listing_projection(blocks, include_meta) for name, blocks in by_station.items()}
+    # YouTube playlist channels keep their own lineup (fs42/youtube_channel.py)
+    for station in youtube_channel.youtube_stations():
+        schedules[station["network_name"]] = youtube_channel.listings(station["network_name"], sdt, edt)
     return {"start": start, "end": end, "schedules": schedules}
 
 

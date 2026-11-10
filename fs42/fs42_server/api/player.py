@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException
+from pydantic import BaseModel
 import json
 import subprocess
 import shutil
@@ -228,6 +229,45 @@ async def show_guide(request:Request):
     command_queue.put({"command": "guide"})
     return {"status" : "ok"}
 
+
+@router.post("/channels/settings")
+async def show_settings(request: Request):
+    """Open the settings menu, or close it if it is already showing."""
+    command_queue = connected_command_queue(request)
+    command_queue.put({"command": "settings"})
+    return {"status": "ok"}
+
+
+@router.post("/channels/close")
+async def close_guide_or_menu(request: Request):
+    """Leave the guide or the settings menu and go back to the channel that was on before."""
+    command_queue = connected_command_queue(request)
+    command_queue.put({"command": "close"})
+    return {"status": "ok"}
+
+
+@router.post("/channels/settings/close")
+async def close_settings(request: Request):
+    """Leave the settings menu and go back to the channel that was on before it."""
+    command_queue = connected_command_queue(request)
+    command_queue.put({"command": "settings_close"})
+    return {"status": "ok"}
+
+class PreviewRect(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+@router.post("/guide/preview")
+async def guide_preview(rect: PreviewRect, request: Request):
+    """Screen rectangle (in pixels) where the guide wants the current channel shown."""
+    if rect.width <= 0 or rect.height <= 0:
+        raise HTTPException(status_code=400, detail="width and height must be positive")
+    command_queue = connected_command_queue(request)
+    command_queue.put({"command": "guide_preview", "rect": f"{rect.x},{rect.y},{rect.width},{rect.height}"})
+    return {"status": "ok"}
+
 @router.get("/commands/stop")
 @router.post("/commands/stop")
 async def player_stop(request: Request):
@@ -263,6 +303,39 @@ async def mpv_cycle_audio(request: Request):
     return await _queue_mpv_command(request, "cycle_audio")
 
 
+@router.post("/channel_entry")
+@router.post("/channel_entry/{digits}")
+async def channel_entry(request: Request, digits: str = ""):
+    """Show the channel number being typed on the remote (no digits takes it down)."""
+    digits = "".join(c for c in digits if c.isdigit())[:3]
+    connected_command_queue(request).put({"command": "channel_entry", "digits": digits})
+    return {"status": "ok", "digits": digits}
+
+
+TRICK_ACTIONS = {"play", "pause", "fast_forward", "rewind"}
+
+
+@router.post("/trick/{action}")
+async def trick_play(action: str, request: Request):
+    """Play, pause, fast forward or rewind an on-demand movie (fast forward and rewind
+    step the speed up each press). Ignored when no on-demand movie is playing."""
+    action = action.replace("-", "_")
+    if action not in TRICK_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {sorted(TRICK_ACTIONS)}")
+    command_queue = connected_command_queue(request)
+    command_queue.put({"command": "trick", "action": action})
+    return {"status": "ok", "command": "trick", "action": action}
+
+
+@router.get("/banner")
+@router.post("/banner")
+async def show_banner(request: Request):
+    """Bring up the channel banner on the TV, or take it down if it is showing (the INFO button)."""
+    command_queue = connected_command_queue(request)
+    command_queue.put({"command": "banner"})
+    return {"status": "ok"}
+
+
 @router.post("/parental/digit/{digit}")
 async def parental_digit(request: Request, digit: str):
     if not digit.isdigit() or len(digit) != 1:
@@ -295,26 +368,26 @@ async def show_ticker(request: Request):
 
 @router.get("/volume/up")
 @router.post("/volume/up")
-async def volume_up():
+async def volume_up(request: Request):
     """Increase volume by VOLUME_STEP percent"""
-    return await _control_volume("up")
+    return await _control_volume("up", request)
 
 
 @router.get("/volume/down")
 @router.post("/volume/down")
-async def volume_down():
+async def volume_down(request: Request):
     """Decrease volume by VOLUME_STEP percent"""
-    return await _control_volume("down")
+    return await _control_volume("down", request)
 
 
 @router.get("/volume/mute")
 @router.post("/volume/mute")
-async def volume_mute():
+async def volume_mute(request: Request):
     """Toggle mute on/off"""
-    return await _control_volume("mute")
+    return await _control_volume("mute", request)
 
 
-async def _control_volume(action: str):
+async def _control_volume(action: str, request: Request = None):
     """Control volume using the most appropriate Linux audio system"""
     
     # Check what audio systems are available
@@ -352,7 +425,31 @@ async def _control_volume(action: str):
     with open(VOLUME_SOCKET, "w") as fp:
         fp.write(as_str)
 
+    # put the volume up on the TV, the way a set shows it when you press the button
+    if request is not None:
+        try:
+            level, muted = _current_volume()
+            connected_command_queue(request).put({"command": "volume_osd", "level": level, "muted": muted})
+        except Exception as e:
+            print(f"Could not show the volume on screen: {e}")
+
     return response
+
+
+def _current_volume():
+    """The output's volume (0-100) and whether it's muted, straight from the mixer."""
+    if shutil.which("pactl"):
+        vol = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"], capture_output=True, text=True).stdout
+        mute = subprocess.run(["pactl", "get-sink-mute", "@DEFAULT_SINK@"], capture_output=True, text=True).stdout
+        match = re.search(r"(\d+)%", vol)
+        return (int(match.group(1)) if match else 0), "yes" in mute.lower()
+    if shutil.which("wpctl"):
+        out = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"], capture_output=True, text=True).stdout
+        match = re.search(r"([\d.]+)", out)
+        return (round(float(match.group(1)) * 100) if match else 0), "MUTED" in out
+    out = subprocess.run(["amixer", "get", "Master"], capture_output=True, text=True).stdout
+    match = re.search(r"\[(\d+)%\]", out)
+    return (int(match.group(1)) if match else 0), "[off]" in out
 
 async def _volume_amixer(action: str):
     """Control volume using ALSA amixer (most common on Raspberry Pi)"""

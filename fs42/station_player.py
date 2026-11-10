@@ -2,18 +2,27 @@ from enum import Enum
 import logging
 
 import multiprocessing
+import threading
 import time
 import datetime
+from types import SimpleNamespace
 import json
 import os
 import glob
 import random
+import sys
+import base64
 import logging
 import time
 from python_mpv_jsonipc import MPV
 
 from fs42.guide_tk import guide_channel_runner, GuideCommands
 from fs42.autobump_agent import AutoBumpAgent
+from fs42 import user_settings
+from fs42.channel_banner import ChannelBanner, logo_file, short_time
+from fs42 import youtube_channel
+from fs42.channel_bug import ChannelBug
+from fs42.track_picker import TrackPicker, tracks as mpv_tracks
 
 # Try to import web_render_runner, but handle gracefully if PySide6 (with QtWebEngine)
 # isn't available -- web rendering is an optional feature.
@@ -39,6 +48,24 @@ from fs42.liquid_manager import LiquidManager, PlayPoint, ScheduleNotFound, Sche
 from fs42.liquid_schedule import LiquidSchedule
 from fs42.station_manager import StationManager
 from fs42.slot_reader import SlotReader
+from fs42.game_caption import GameCaption
+from fs42.trick_play import TrickPlay
+from fs42.volume_osd import VolumeOSD
+from fs42.notice_osd import NoticeOSD
+from fs42.channel_entry_osd import ChannelEntryOSD
+from fs42.x11_focus import activate_window
+
+# YouTube channels (youtube_playlists) are played by mpv, which hands the video to
+# yt-dlp - the browser's embedded player only ever gets 360p. The venv's yt-dlp, as
+# the system one is too old for YouTube. Up to 1080p, H.264 first as it's the
+# lightest to decode, then VP9, then anything; plain https streams before HLS, as
+# they seek faster.
+YTDL_PATH = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "yt-dlp")
+YTDL_FORMAT = ("bv*[height<=1080][vcodec^=avc1][protocol^=https]+ba[protocol^=https]"
+               "/bv*[height<=1080][vcodec^=vp9][protocol^=https]+ba[protocol^=https]"
+               "/bv*[height<=1080]+ba/b[height<=1080]/b")
+# how long a YouTube video may take to start before it's skipped
+YOUTUBE_START_TIMEOUT = 30
 
 logging.basicConfig(format="%(asctime)s %(levelname)s:%(name)s:%(message)s", level=logging.INFO)
 
@@ -71,6 +98,13 @@ def update_status_socket(
         status_obj["file_path"] = file_path
     if content_type is not None:
         status_obj["content_type"] = content_type
+    # the remote sends number keys to the settings menu (for typing a ZIP code)
+    # rather than changing channel while it's up
+    settings_conf = StationManager().settings_config
+    status_obj["settings_menu"] = bool(settings_conf and channel == settings_conf["channel_number"])
+    # and BACK/EXIT closes the guide back to the channel it was opened from
+    guide_conf = StationManager().guide_config
+    status_obj["guide"] = bool(guide_conf and channel == guide_conf["channel_number"])
     status_socket = StationManager().server_conf["status_socket"]
     as_str = json.dumps(status_obj)
     with open(status_socket, "w") as fp:
@@ -191,9 +225,14 @@ class StationPlayer:
                 fs=True,
                 idle=True,
                 force_window=True,
-                script_opts="osc-idlescreen=no",
+                script_opts=f"osc-idlescreen=no,ytdl_hook-ytdl_path={YTDL_PATH}",
+                ytdl_format=YTDL_FORMAT,
                 hr_seek="yes",
                 image_display_duration="inf",
+                # OpenGL, not Vulkan: Mesa's Vulkan swapchain on X11 can deadlock when the
+                # window is resized or covered - the guide preview does both - and mpv
+                # then freezes for good (seen twice, the WSI swapchain threads stuck)
+                gpu_api="opengl",
             )
 
         self.station_config = station_config
@@ -205,6 +244,16 @@ class StationPlayer:
         self.skip_reception_check = False
         self.web_process = None
         self.web_queue = None
+        self._guide_preview_active = False
+        self._guide_preview_rect = None
+        # the last scheduled channel played - the guide preview follows its schedule
+        self._preview_network = None
+        # a web channel kept running while the guide or menu is up, so the guide can
+        # preview it and tuning back finds it still going: (network_name, process, queue)
+        self._parked_web = None
+        # the last channel tuned that isn't hidden (set by the main loop) - the guide
+        # starts with it selected
+        self.last_channel = None
         self.parental_controls_process = None
         self.parental_controls_queue = None
         self.parental_unlocked_network = None
@@ -213,6 +262,221 @@ class StationPlayer:
         self.schedule_lock = None
         self._active_afx = None
         self._pending_response = None
+        self.banner = ChannelBanner(self.mpv)
+        # the channel's logo in the bottom right corner while a show plays
+        self.bug = ChannelBug(self.mpv)
+        self.track_picker = TrackPicker(self.mpv)
+        self.track_picker.on_open = self.bug.suspend
+        self.track_picker.on_close = self.bug.resume
+        # which game a YouTube highlight is, in the bottom left as it starts
+        self.caption = GameCaption(self.mpv)
+        self.volume_osd = VolumeOSD(self.mpv)
+        self.notice_osd = NoticeOSD(self.mpv)
+        self.channel_entry = ChannelEntryOSD(self.mpv)
+        # YouTube videos that wouldn't play - the lineup's next one stands in for them
+        self._youtube_broken = set()
+        # set by the main loop on every tune; the banner then shows once the channel is playing
+        self.banner_pending = False
+        self._banner_request = None
+        self.apply_user_settings()
+
+    # mpv's monitoraspect is the physical shape of the screen, so the picture stays
+    # correct whatever resolution the output runs at (a CRT often gets 720x480)
+    ASPECT_RATIOS = {"16:9": 16 / 9, "4:3": 4 / 3}
+
+    def _panscan(self):
+        # zoom from the settings menu fills the screen; otherwise the station decides
+        if user_settings.load_settings()["picture_size"] == "zoom":
+            return 1.0
+        return self.station_config.get("panscan", 0.0)
+
+    # Audio Normalization: ffmpeg's dynamic normalizer, which follows the loudness gently
+    # over a few seconds (no pumping), boosts quiet audio at most 10x and keeps peaks
+    # clear of clipping. Labelled, so it can be found and removed again.
+    NORMALIZE_AF = "@fs42norm:lavfi=[dynaudnorm=f=400:g=21:p=0.89:m=10:s=0]"
+
+    def apply_audio_normalize(self):
+        """Add or remove the normalization filter to match the setting."""
+        on = user_settings.load_settings().get("audio_normalize") == "on"
+        try:
+            chain = self.mpv.command("get_property", "af") or []
+            present = any(f.get("label") == "fs42norm" for f in chain)
+            if on and not present:
+                self.mpv.command("af", "add", self.NORMALIZE_AF)
+            elif not on and present:
+                self.mpv.command("af", "remove", "@fs42norm")
+        except Exception as e:
+            self._l.warning(f"Could not apply audio normalization: {e}")
+
+    def apply_user_settings(self):
+        """Apply the settings menu values to the running player."""
+        settings = user_settings.load_settings()
+        self.apply_audio_normalize()
+        aspect = self.ASPECT_RATIOS.get(settings["aspect_ratio"], 16 / 9)
+        try:
+            changed = abs(self.mpv.command("get_property", "monitoraspect") - aspect) > 0.001
+            self.mpv.command("set_property", "monitoraspect", aspect)
+            if changed:
+                self._relayout_video()
+            self._l.info(f"Screen aspect ratio set to {settings['aspect_ratio']}")
+        except Exception as e:
+            self._l.warning(f"Could not apply aspect ratio setting: {e}")
+        try:
+            self.mpv.panscan = self._panscan()
+            # zoom pushes the video past the screen edges, and mpv then centers
+            # subtitles on the whole video rather than the screen - keep them on screen
+            self.mpv.command("set_property", "sub-use-margins", settings["picture_size"] != "zoom")
+            self._l.info(f"Picture size set to {settings['picture_size']}")
+        except Exception as e:
+            self._l.warning(f"Could not apply picture size setting: {e}")
+
+    def _already_playing(self, file_path, offset_seconds):
+        """True when mpv is already on this file within a few seconds of where the schedule is."""
+        try:
+            path = self.mpv.command("get_property", "path")
+            pos = self.mpv.command("get_property", "time-pos")
+        except Exception:
+            return False
+        if not path or pos is None:
+            return False
+        # mpv reports a relative path resolved against its own working directory,
+        # so match on the path as scheduled rather than the absolute one
+        wanted = os.path.normpath(file_path)
+        if not (os.path.normpath(path) == os.path.abspath(wanted) or os.path.normpath(path).endswith(os.sep + wanted)):
+            return False
+        return abs(pos - (offset_seconds or 0)) < 3
+
+    ENGLISH = {"en", "eng"}
+
+    def _prepare_tracks(self):
+        # set before the file opens, so the wrong language never plays for a moment
+        settings = user_settings.load_settings()
+        try:
+            self.mpv.command("set_property", "alang", "eng,en" if settings["audio_language"] == "english" else "")
+            self.mpv.command("set_property", "sid", "auto" if settings["subtitles"] == "file" else "no")
+        except Exception as e:
+            self._l.warning(f"Could not set track preferences: {e}")
+
+    def _choose_tracks(self):
+        # files can flag any track as the default - a dub, or a sidecar .srt in another
+        # language - so pick by language rather than trusting the file
+        settings = user_settings.load_settings()
+        try:
+            if settings["audio_language"] == "english":
+                english = [t for t in mpv_tracks(self.mpv, "audio") if (t.get("lang") or "").lower() in self.ENGLISH]
+                if english and not any(t.get("selected") for t in english):
+                    english.sort(key=lambda t: not t.get("default"))
+                    self.mpv.command("set_property", "aid", english[0]["id"])
+            if settings["subtitles"] == "english":
+                english = [t for t in mpv_tracks(self.mpv, "sub") if (t.get("lang") or "").lower() in self.ENGLISH]
+                # embedded before sidecar files, then the file's own default
+                english.sort(key=lambda t: (bool(t.get("external")), not t.get("default")))
+                self.mpv.command("set_property", "sid", english[0]["id"] if english else "no")
+        except Exception as e:
+            self._l.warning(f"Could not choose audio/subtitle tracks: {e}")
+
+    def _web_banner(self, conf):
+        """The channel banner for a web channel, as a message for its page to draw:
+        mpv's own banner would be hidden under the page. None for the guide and the
+        settings menu (hidden channels), which have their own screens."""
+        if conf is None or conf.get("network_type") != "web" or conf.get("hidden"):
+            return None
+        now = datetime.datetime.now()
+        info = {
+            "number": conf.get("channel_number", ""),
+            "name": conf.get("network_name", ""),
+            "title": conf.get("network_long_name") or conf.get("network_name", ""),
+            "subtitle": "",
+            "when": f"{now.strftime('%a %m/%d').upper()}   {short_time(now)}",
+            "slot": "",
+            "logo": None,
+        }
+        logo = logo_file(conf.get("channel_logo"))
+        if logo:
+            kind = "image/svg+xml" if logo.lower().endswith(".svg") else "image/png"
+            with open(logo, "rb") as f:
+                # sent inline, so it shows on pages from other sites too
+                info["logo"] = f"data:{kind};base64," + base64.b64encode(f.read()).decode()
+        if conf.get("youtube_playlists"):
+            try:
+                on = youtube_channel.now_playing(conf["network_name"])
+            except Exception as e:
+                self._l.warning(f"Could not look up what's on {conf['network_name']}: {e}")
+                on = None
+            if on:
+                game = on.get("game")
+                info["title"] = game["matchup"] if game else on["title"]
+                info["subtitle"] = " · ".join(x for x in (game["date"], game["note"]) if x) if game else ""
+                start = now - datetime.timedelta(seconds=on["offset"])
+                end = now + datetime.timedelta(seconds=on["remaining"])
+                info["slot"] = f"{short_time(start)} - {short_time(end)}"
+        return info
+
+    def show_volume(self, level, muted):
+        """The volume read-out after a volume or mute press - in the page when a web
+        channel (the guide, a menu) is in front, since mpv's OSD is hidden under it."""
+        if self.web_process is not None and self.web_queue:
+            self.web_queue.put("volume:" + json.dumps({"level": level, "muted": muted}))
+        else:
+            self.notice_osd.hide()
+            self.volume_osd.show(level, muted)
+
+    def show_channel_entry(self, digits):
+        """The channel number being typed, top right - in the page when a web channel is in front."""
+        if self.web_process is not None and self.web_queue:
+            self.web_queue.put("entry:" + json.dumps({"digits": digits}))
+        else:
+            self.channel_entry.show(digits)
+
+    def show_notice_invalid(self):
+        """ACTION NOT VALID, low on the screen - in the page when a web channel is in front."""
+        if self.web_process is not None and self.web_queue:
+            self.web_queue.put("notice:" + json.dumps({"text": "ACTION NOT VALID"}))
+        else:
+            # they share the bottom of the screen - the newest one wins
+            self.volume_osd.hide()
+            self.notice_osd.invalid()
+
+    def toggle_banner(self):
+        """INFO button: show the channel banner for what's on now, or hide it if it's up."""
+        if self.web_process is not None:
+            # a web channel draws it in its page; the guide and menu have their own screens
+            info = self._web_banner(self.station_config)
+            if info and self.web_queue:
+                self.web_queue.put("banner:" + json.dumps(info))
+            return
+        if self.banner.showing:
+            self.banner.hide()
+            return
+        network_name = self.station_config["network_name"]
+        try:
+            if self.plays_youtube(self.station_config):
+                block = self._youtube_block(self._youtube_entry(network_name))
+            else:
+                block = LiquidManager().get_programming_block(network_name, datetime.datetime.now())
+        except Exception:
+            block = None
+        self.banner.show(self.station_config, block)
+
+    def _relayout_video(self):
+        # mpv only works out the screen's pixel shape when the video is reconfigured,
+        # so a new monitoraspect does nothing mid-file. Nudging the aspect override
+        # forces that reconfigure without reloading the file.
+        try:
+            params = self.mpv.command("get_property", "video-params")
+        except Exception:
+            params = None  # mpv reports the property as unavailable while idle
+        if not params:
+            return  # nothing loaded - the next file picks the new shape up
+        fullscreen = self.mpv.command("get_property", "fullscreen")
+        self.mpv.command("set_property", "video-aspect-override", params["aspect"] * 1.01)
+        time.sleep(0.1)
+        self.mpv.command("set_property", "video-aspect-override", "-1")
+        # a reconfigure can resize a windowed mpv, so put the window back how it was
+        if self._guide_preview_active and self._guide_preview_rect:
+            self._start_guide_preview(self._guide_preview_rect)
+        elif fullscreen and not self.mpv.command("get_property", "fullscreen"):
+            self.mpv.command("set_property", "fullscreen", True)
 
     def load_up(self):
         start_time = time.perf_counter()
@@ -223,8 +487,15 @@ class StationPlayer:
     def show_text(self, text, duration=4):
         self.mpv.command("show-text", text, duration)
 
+    # the yellow and blue buttons - the remotes send these as cycle_audio / cycle_subtitles
+    TRACK_PICKER_COMMANDS = {"cycle_audio": "audio", "cycle_subtitles": "sub"}
+
     def mpv_runtime_command(self, action):
         """Run a small set of user-facing mpv runtime commands."""
+        if action in self.TRACK_PICKER_COMMANDS:
+            if self.web_process is None:
+                self.track_picker.press(self.TRACK_PICKER_COMMANDS[action])
+            return True
         mpv_command = self.MPV_RUNTIME_COMMANDS.get(action)
         if not mpv_command:
             self._l.warning(f"Unknown mpv runtime command: {action}")
@@ -248,6 +519,52 @@ class StationPlayer:
         ):
             action = response.payload.split(":", 1)[1]
             self.mpv_runtime_command(action)
+            return True
+
+        if (
+            response
+            and response.status == PlayerState.SUCCESS
+            and isinstance(response.payload, str)
+            and response.payload.startswith("entry:")
+        ):
+            self.show_channel_entry(response.payload.split(":", 1)[1])
+            return True
+
+        if (
+            response
+            and response.status == PlayerState.SUCCESS
+            and isinstance(response.payload, str)
+            and response.payload.startswith("trick:")
+        ):
+            # play/pause/ff/rewind only work in an on-demand movie (play_and_wait takes
+            # them before they get here) - anywhere else, say so
+            self.show_notice_invalid()
+            return True
+
+        if (
+            response
+            and response.status == PlayerState.SUCCESS
+            and isinstance(response.payload, str)
+            and response.payload.startswith("volume:")
+        ):
+            _, level, muted = response.payload.split(":")
+            self.show_volume(int(level), muted == "1")
+            return True
+
+        if (
+            response
+            and response.status == PlayerState.SUCCESS
+            and response.payload == "banner"
+        ):
+            self.toggle_banner()
+            return True
+
+        if (
+            response
+            and response.status == PlayerState.SUCCESS
+            and response.payload == "apply_settings"
+        ):
+            self.apply_user_settings()
             return True
 
         return False
@@ -484,6 +801,7 @@ class StationPlayer:
 
     def shutdown(self):
         self.current_playing_file_path = None
+        self.release_parked_web()
         # Terminate any running web process
         if self.web_process and self.web_process.is_alive():
             self._l.info("Terminating web process")
@@ -577,10 +895,7 @@ class StationPlayer:
                     self.show_web(conf, blocking=False)
                     return True
 
-                if "panscan" in self.station_config:
-                    self.mpv.panscan = self.station_config["panscan"]
-                else:
-                    self.mpv.panscan = 0.0
+                self.mpv.panscan = self._panscan()
 
                 if "video_keepaspect" in self.station_config:
                     self.mpv.keepaspect = self.station_config["video_keepaspect"]
@@ -590,40 +905,47 @@ class StationPlayer:
                 self._apply_vfx(datetime.datetime.now())
 
                 # self.mpv.vf = "lavfi=[]"
-                self._l.info(f"playing {file_path}")
-                self.mpv.command("playlist-clear")
-                self.mpv.play(file_path)
+                if not is_stream and self._already_playing(file_path, offset_seconds):
+                    # kept running behind the settings menu - carry on rather than reload
+                    self._l.info(f"already playing {file_path} at the scheduled spot - continuing")
+                else:
+                    self._l.info(f"playing {file_path}")
+                    self._prepare_tracks()
+                    self.mpv.command("playlist-clear")
+                    self.mpv.play(file_path)
                 
 
-                timeout_seconds = StationManager().server_conf.get("video_seek_timeout", 10)
-                start_time = time.time()
+                    timeout_seconds = StationManager().server_conf.get("video_seek_timeout", 10)
+                    start_time = time.time()
 
-                while True:
-                    try:
-                        if self.mpv.time_pos is not None:
-                            break
-                        if time.time() - start_time > timeout_seconds:
-                            self._l.error(f"Timeout waiting for playback to start on {file_path}")
-                            return False
-                        if is_stream:
-                            response = self.input_check_fn()
-                            if (
-                                response
-                                and not self.handle_runtime_command_outcome(response)
-                                and not self.is_non_interrupting(response)
-                            ):
-                                self._pending_response = response
+                    while True:
+                        try:
+                            if self.mpv.time_pos is not None:
+                                break
+                            if time.time() - start_time > timeout_seconds:
+                                self._l.error(f"Timeout waiting for playback to start on {file_path}")
                                 return False
-                        time.sleep(0.05)
-                    except Exception as e:
-                        if time.time() - start_time > timeout_seconds:
-                            self._l.error(f"Error waiting for playback: {e}")
-                            return False
-                        time.sleep(0.05)
+                            if is_stream:
+                                response = self.input_check_fn()
+                                if (
+                                    response
+                                    and not self.handle_runtime_command_outcome(response)
+                                    and not self.is_non_interrupting(response)
+                                ):
+                                    self._pending_response = response
+                                    return False
+                            time.sleep(0.05)
+                        except Exception as e:
+                            if time.time() - start_time > timeout_seconds:
+                                self._l.error(f"Error waiting for playback: {e}")
+                                return False
+                            time.sleep(0.05)
 
-                # Perform seek if needed (before showing overlay)
-                if not is_stream and offset_seconds is not None and offset_seconds > 0:
-                    self._seek_with_verify(file_path, offset_seconds, timeout_seconds)
+                    self._choose_tracks()
+
+                    # Perform seek if needed (before showing overlay)
+                    if not is_stream and offset_seconds is not None and offset_seconds > 0:
+                        self._seek_with_verify(file_path, offset_seconds, timeout_seconds)
 
                 # Show Now Playing overlay for audio feature files
                 self._l.info(f"Media type: {media_type}, Content type: {content_type}")
@@ -704,10 +1026,27 @@ class StationPlayer:
         self._close_now_playing()
         self.mpv.vf = ""
         self.mpv.af = ""
+        self.apply_audio_normalize()
         self.mpv.command("playlist-clear")
-        self.mpv.command("loadfile", file_path, "replace")
-        self.mpv.loop_playlist = "inf"
+        # an on-demand movie plays once, then it's back to the menu. keep-open holds the
+        # last frame at the end instead of mpv dropping to idle, which can lock up its
+        # video output - the end shows up as eof-reached instead
+        self.mpv.loop_playlist = "no"
+        self.mpv.command("loadfile", file_path, "replace", -1, "keep-open=yes")
         self.current_playing_file_path = file_path
+        self._take_focus()
+
+        # BACK/EXIT on the remote goes back to the menu while this is on
+        title = os.path.splitext(os.path.basename(file_path))[0]
+        if self.station_config:
+            update_status_socket(
+                "playing",
+                self.station_config["network_name"],
+                self.station_config["channel_number"],
+                title,
+                file_path=file_path,
+                content_type="on_demand",
+            )
 
         # show NFO overlay if the file has overlay-eligible cached metadata
         try:
@@ -718,18 +1057,53 @@ class StationPlayer:
         except Exception as e:
             self._l.warning(f"Could not start NFO overlay: {e}")
 
-        # this will keep going until channel change or other interrupt
+        # play/pause/fast forward/rewind from the remote, with a bar across the bottom
+        trick = TrickPlay(self.mpv, title)
+
+        # this will keep going until the movie ends, a channel change or other interrupt
+        started = False
+        load_deadline = time.time() + 30
         while True:
             time.sleep(0.05)
+            trick.tick()
+            try:
+                ended = self.mpv.command("get_property", "eof-reached")
+                # mpv reports the path its own way, so match on the file name
+                loaded = os.path.basename(self.mpv.command("get_property", "path") or "") == os.path.basename(file_path)
+            except Exception:
+                ended, loaded = False, False
+            if loaded and not ended:
+                started = True
+            if (started and ended) or (not started and time.time() > load_deadline):
+                # the movie finished (or never would load) - the main loop puts the menu back up
+                self._l.info(f"On-demand playback of {file_path} ended")
+                self._close_now_playing()
+                trick.reset()
+                self._unpause()
+                return PlayerOutcome(PlayerState.SUCCESS)
             response = self.input_check_fn()
             if response:
+                if isinstance(response.payload, str) and response.payload.startswith("trick:"):
+                    trick.press(response.payload.split(":", 1)[1])
+                    continue
                 if self.handle_runtime_command_outcome(response):
                     continue
                 if self.is_non_interrupting(response):
                     self._l.debug(f"Ignoring non-interrupting command during playback: {response.payload}")
                     continue
                 self._close_now_playing()
+                trick.reset()
+                self._unpause()
                 return response
+
+    def _unpause(self):
+        # keep-open leaves mpv paused on a movie's last frame, and it would stay paused
+        # for whatever loads next - swap in a black frame and play on
+        try:
+            self.mpv.command("loadfile", "runtime/black.png", "replace")
+            self.mpv.pause = False
+        except Exception as e:
+            self._l.debug(f"Could not unpause mpv: {e}")
 
     def play_file_list(self, file_list):
 
@@ -913,35 +1287,189 @@ class StationPlayer:
         except Exception:
             self._l.error(f"Failed to stop player - might not be running")
 
+    def _start_guide_preview(self, rect):
+        # park the still-playing mpv window over the guide's preview panel
+        try:
+            x, y, w, h = (int(v) for v in rect.split(","))
+            self.mpv.command("set_property", "fullscreen", False)
+            self.mpv.command("set_property", "border", False)
+            self.mpv.command("set_property", "geometry", f"{w}x{h}+{x}+{y}")
+            self.mpv.command("set_property", "ontop", True)
+            # leaving fullscreen can land after the geometry, and the window manager
+            # then sizes the window to the video - so check, and put it back if so
+            for _ in range(5):
+                time.sleep(0.2)
+                dims = self.mpv.command("get_property", "osd-dimensions")
+                if abs(dims["w"] - w) <= 2 and abs(dims["h"] - h) <= 2:
+                    break
+                self.mpv.command("set_property", "geometry", f"{w}x{h}+{x}+{y}")
+            else:
+                self._l.warning(f"mpv window did not settle at {w}x{h} for the guide preview")
+            self._guide_preview_active = True
+            self._guide_preview_rect = rect
+            self._raise_guide_preview()
+            # the guide window can still be mapping and get stacked over it - again shortly
+            raise_again = threading.Timer(2.0, self._raise_guide_preview)
+            raise_again.daemon = True
+            raise_again.start()
+            self._l.info(f"Guide preview placed at {w}x{h}+{x}+{y}")
+        except Exception as e:
+            self._l.warning(f"Could not start guide preview: {e}")
+
+    def _raise_guide_preview(self):
+        # setting ontop when it's already on does nothing, so a guide window that got
+        # raised over the preview stays there (a black panel) - drop it and set it again,
+        # which makes the window manager restack mpv on top
+        if not self._guide_preview_active:
+            return
+        try:
+            self.mpv.command("set_property", "ontop", False)
+            self.mpv.command("set_property", "ontop", True)
+        except Exception as e:
+            self._l.debug(f"Could not raise guide preview: {e}")
+
+    def _guide_preview_entry_end(self, network_name):
+        # when the entry the channel is airing now is scheduled to end
+        try:
+            now = datetime.datetime.now()
+            if self.plays_youtube(StationManager().station_by_name(network_name)):
+                entry = self._youtube_entry(network_name)
+                return now + datetime.timedelta(seconds=entry["remaining"]) if entry else None
+            play_point = LiquidManager().get_play_point(network_name, now)
+            if play_point is None or not play_point.plan:
+                return None
+            entry = play_point.plan[play_point.index]
+            return now + datetime.timedelta(seconds=entry.duration - play_point.offset)
+        except Exception as e:
+            self._l.warning(f"Could not find schedule entry for guide preview: {e}")
+            return None
+
+    def _advance_guide_preview(self, network_name):
+        # the previewed entry ended - load whatever the channel is airing now into the preview
+        try:
+            if self.plays_youtube(StationManager().station_by_name(network_name)):
+                entry = self._youtube_entry(network_name)
+                if entry is None or self._load_youtube(entry, watch_input=False) is not True:
+                    return False
+                if self._guide_preview_active and self._guide_preview_rect:
+                    self._start_guide_preview(self._guide_preview_rect)
+                return True
+            play_point = LiquidManager().get_play_point(network_name, datetime.datetime.now())
+            if play_point is None or not play_point.plan:
+                return False
+            entry = play_point.plan[play_point.index]
+            if getattr(entry, "is_stream", False) or AutoBumpAgent.is_autobump_url(entry.path):
+                return False
+            self._l.info(f"Guide preview advancing to {entry.path}")
+            self.mpv.command("playlist-clear")
+            self.mpv.play(entry.path)
+            timeout_seconds = StationManager().server_conf.get("video_seek_timeout", 10)
+            start_time = time.time()
+            while self.mpv.time_pos is None:
+                if time.time() - start_time > timeout_seconds:
+                    self._l.warning(f"Timeout waiting for guide preview to start on {entry.path}")
+                    return False
+                time.sleep(0.05)
+            skip = entry.skip + play_point.offset
+            if skip > 0:
+                self._seek_with_verify(entry.path, skip, timeout_seconds)
+            self.current_playing_file_path = entry.path
+            # a new file can make mpv resize its window, so put it back over the panel
+            if self._guide_preview_active and self._guide_preview_rect:
+                self._start_guide_preview(self._guide_preview_rect)
+            return True
+        except Exception as e:
+            self._l.warning(f"Could not advance guide preview: {e}")
+            return False
+
+    def _end_guide_preview(self):
+        if not self._guide_preview_active:
+            return
+        self._guide_preview_active = False
+        try:
+            self.mpv.command("set_property", "ontop", False)
+            self.mpv.command("set_property", "geometry", "")
+            # border is left off - it doesn't show in fullscreen, and re-adding it makes
+            # the window manager re-decorate the window, which can swallow the fullscreen request
+            for _ in range(5):
+                self.mpv.command("set_property", "fullscreen", True)
+                time.sleep(0.2)
+                if self.mpv.command("get_property", "fullscreen"):
+                    break
+            else:
+                self._l.warning("mpv did not return to fullscreen after guide preview")
+        except Exception as e:
+            self._l.warning(f"Could not restore mpv after guide preview: {e}")
+
     def show_web(self, web_config, blocking=True):
         if not WEB_RENDER_AVAILABLE:
             self._l.error("Web rendering not available - PySide6 not installed")
             msg = "Web rendering requires PySide6 to be installed and configured. Please check documentation."
             return PlayerOutcome(PlayerState.EXIT_COMMAND, msg)
 
-        ctx = multiprocessing.get_context("spawn")
+        # a web channel left running under the guide or menu: tuning back to it picks it
+        # up where it is, and a guide previews it in place of mpv
+        parked = self._parked_web
+        resume_parked = parked is not None and parked[0] == web_config["network_name"]
+        web_preview = parked is not None and not resume_parked and web_config.get("guide_preview", False)
+        if parked is not None and not (resume_parked or web_preview or web_config.get("keep_playing", False)):
+            self.release_parked_web()
 
-        # create the pipe to communicate with the web channel
-        self.web_queue = ctx.Queue()
-        self.web_process = ctx.Process(
-            target=web_render_runner,
-            args=(
-                web_config,
-                self.web_queue,
-            ),
-        )
-        self.web_process.start()
+        # Keep the current channel playing for a guide that previews it - but only a
+        # real channel, not the startup standby image or nothing at all.
+        standby = StationManager().server_conf.get("standby_image", "runtime/standby.png")
+        playing_real_channel = self.current_playing_file_path not in (None, standby)
+        guide_preview = web_config.get("guide_preview", False) and playing_real_channel
+        # keep_playing leaves the channel running behind the page (the settings menu),
+        # so its audio carries on and it is still playing when the page closes
+        keep_playing = (guide_preview or web_config.get("keep_playing", False)) and playing_real_channel
 
-        # Stop any currently playing content
-        self.mpv.stop()
-        self.current_playing_file_path = None
+        if resume_parked:
+            _, self.web_process, self.web_queue = parked
+            self._parked_web = None
+            self.web_queue.put("fullscreen")
+        else:
+            ctx = multiprocessing.get_context("spawn")
+
+            # create the pipe to communicate with the web channel - telling it whether it is
+            # really previewing, since that decides how its window stacks against mpv, and
+            # whether a parked web channel will be raised over it into its preview panel
+            self.web_queue = ctx.Queue()
+            self.web_process = ctx.Process(
+                target=web_render_runner,
+                args=(
+                    {**web_config, "guide_preview": guide_preview, "web_preview": web_preview,
+                     "web_url": self._guide_url(web_config)},
+                    self.web_queue,
+                ),
+            )
+            self.web_process.start()
+
+        # the banner belongs to the channel being left; a web channel's page draws its own
+        # (the guide and menu have none, and the bug would only be a speck in the guide's preview)
+        self.banner.hide()
+        if user_settings.load_settings()["channel_banner"] == "on" and not (guide_preview or web_preview):
+            info = self._web_banner(web_config)
+            if info:
+                # the page shows it once it has loaded
+                self.web_queue.put("banner:" + json.dumps(info))
+        self.bug.hide()
+        self.track_picker.hide()
+        self.banner_pending = False
+        self._banner_request = None
+
+        # Stop any currently playing content - unless it keeps running behind this page.
+        if not keep_playing:
+            self.mpv.stop()
+            # a file kept playing keeps its path, so re-tuning the guide keeps the preview
+            self.current_playing_file_path = None
 
         # update status
         update_status_socket(
             "playing",
             self.station_config["network_name"],
             self.station_config["channel_number"],
-            self.station_config["network_name"],
+            self.station_config.get("network_long_name") or self.station_config["network_name"],
             timestamp=StationManager().server_conf["date_time_format"],
             content_type="web",
         )
@@ -956,9 +1484,36 @@ class StationPlayer:
             stop_time = datetime.datetime.now() + datetime.timedelta(seconds=duration)
             self._l.info(f"Web content will auto-stop after {duration} seconds")
 
+        # follow the previewed channel's schedule so the next entry plays in the preview
+        preview_network = self._preview_network if keep_playing else None
+        preview_end = self._guide_preview_entry_end(preview_network) if preview_network else None
+
+        # a full-screen page outside the window manager's control can end up under the
+        # desktop taskbar (it gets restacked when nothing has focus), so while this is
+        # the channel on screen, have it raise itself now and then - a page parked in
+        # the background never gets asked, so it can't come up over the guide
+        raise_page = not (guide_preview or web_config.get("guide_preview") or keep_playing)
+        next_raise = time.time() + 2
+
         keep_going = True
         while keep_going:
             time.sleep(0.05)
+
+            if raise_page and self.web_queue and time.time() >= next_raise:
+                self.web_queue.put("raise")
+                next_raise = time.time() + 2
+
+            # mpv keeps playing under a previewing guide, so let the
+            # channel-change static clear like it does during normal playback
+            if keep_playing:
+                self.update_reception()
+
+            if preview_end and datetime.datetime.now() >= preview_end:
+                if self._advance_guide_preview(preview_network):
+                    preview_end = self._guide_preview_entry_end(preview_network)
+                else:
+                    # try again shortly rather than leaving the preview dead
+                    preview_end = datetime.datetime.now() + datetime.timedelta(seconds=5)
 
             # Check if duration has expired
             if stop_time and datetime.datetime.now() >= stop_time:
@@ -977,10 +1532,19 @@ class StationPlayer:
                 finally:
                     self.web_process = None
                     self.web_queue = None
+                self._end_guide_preview()
                 return PlayerOutcome(PlayerState.SUCCESS)
 
             response = self.input_check_fn()
             if response:
+                if isinstance(response.payload, str) and response.payload.startswith("preview_rect:"):
+                    rect = response.payload[len("preview_rect:"):]
+                    if guide_preview:
+                        self._start_guide_preview(rect)
+                    elif web_preview and self._parked_web:
+                        self._parked_web[2].put(f"geometry:{rect}")
+                        self._l.info(f"Guide preview of {self._parked_web[0]} placed at {rect}")
+                    continue
                 # Check if this is a web_key command - forward to web process
                 if self.handle_runtime_command_outcome(response):
                     continue
@@ -992,13 +1556,79 @@ class StationPlayer:
                 elif self.is_non_interrupting(response):
                     self._l.debug(f"Ignoring non-interrupting command on web channel: {response.payload}")
                 else:
-                    self._l.info("Sending the web channel shutdown command")
-                    self.web_queue.put("hide_window")
-                    self.web_process.join()
+                    # an on-demand pick plays in mpv, so the menu page closes (music and all)
+                    if self._parkable(web_config) and response.status != PlayerState.PLAY_FILE:
+                        # leave it running - the main loop closes it unless the next stop is
+                        # the guide, the menu, or this channel again (release_parked_web)
+                        self._l.info(f"Keeping web channel {web_config['network_name']} running in the background")
+                        self._parked_web = (web_config["network_name"], self.web_process, self.web_queue)
+                    else:
+                        self._l.info("Sending the web channel shutdown command")
+                        self.web_queue.put("hide_window")
+                        self.web_process.join()
+                        if not keep_playing:
+                            # mpv sat idle under the page, so it has to win focus back
+                            # (a preview or the menu leaves it playing and focused)
+                            self._refocus_mpv()
                     self.web_process = None
                     self.web_queue = None
+                    self._end_guide_preview()
                     return response
         return PlayerOutcome(PlayerState.SUCCESS)
+
+    def _guide_url(self, web_config):
+        # tell a guide which channel it was opened from, so that's the one selected
+        url = web_config.get("web_url")
+        if url and web_config.get("guide_preview") and self.last_channel is not None:
+            url += ("&" if "?" in url else "?") + f"current={self.last_channel}"
+        return url
+
+    @staticmethod
+    def _parkable(web_config):
+        # an ordinary web channel - not the guide or menu, and not a timed bump
+        return not (web_config.get("guide_preview") or web_config.get("keep_playing") or web_config.get("duration"))
+
+    def release_parked_web(self, keep_for=None):
+        """Close the web channel left running in the background - unless keep_for, the
+        channel being tuned to, is that channel again, or the guide or menu over it."""
+        if self._parked_web is None:
+            return
+        name, process, queue = self._parked_web
+        if keep_for is not None and (
+            keep_for["network_name"] == name or keep_for.get("guide_preview") or keep_for.get("keep_playing")
+        ):
+            return
+        self._parked_web = None
+        self._l.info(f"Closing background web channel {name}")
+        try:
+            queue.put("hide_window")
+            process.join(timeout=3)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=1)
+        except Exception as e:
+            self._l.error(f"Error closing background web channel: {e}")
+        if keep_for is not None:
+            self._refocus_mpv()
+
+    def _take_focus(self):
+        """On a tune, give the TV focus back if something on the desktop took it - a
+        fullscreen window without focus has the taskbar stacked over it."""
+        try:
+            if not self.mpv.command("get_property", "focused"):
+                activate_window(self.mpv.command("get_property", "window-id"))
+        except Exception as e:
+            self._l.debug(f"Could not give mpv focus: {e}")
+
+    def _refocus_mpv(self):
+        # with the web window gone, nothing has focus and the taskbar stacks over mpv -
+        # going out of fullscreen and back makes the window manager focus it again
+        try:
+            self.mpv.command("set_property", "fullscreen", False)
+            time.sleep(0.3)
+            self.mpv.command("set_property", "fullscreen", True)
+        except Exception as e:
+            self._l.warning(f"Could not refocus mpv: {e}")
 
     def schedule_panic(self, network_name):
         self._l.critical("*********************Schedule Panic*********************")
@@ -1016,6 +1646,144 @@ class StationPlayer:
             if self.schedule_lock:
                 self.schedule_lock.release()
 
+    @staticmethod
+    def plays_youtube(conf):
+        """Whether a channel is a YouTube playlist channel that mpv plays (rather than
+        the browser page, kept for "youtube_player": "web")."""
+        return bool(conf and conf.get("youtube_playlists")) and conf.get("youtube_player", "mpv") == "mpv"
+
+    def _youtube_entry(self, network_name, finished=None):
+        """What's on a YouTube channel now - or when that video wouldn't play (or has
+        already played to its end), the next one in the lineup instead."""
+        entry = youtube_channel.now_playing(network_name)
+        for _ in range(5):
+            if entry is None or (entry["id"] not in self._youtube_broken and entry["id"] != finished):
+                break
+            entry = youtube_channel.now_playing(network_name, after=time.time() + entry["remaining"])
+        return entry
+
+    @staticmethod
+    def _youtube_block(entry):
+        """A stand-in schedule block for the channel banner: the game and its slot."""
+        now = datetime.datetime.now()
+        game = entry.get("game")
+        return SimpleNamespace(
+            title=game["matchup"] if game else entry["title"],
+            start_time=now - datetime.timedelta(seconds=entry["offset"]),
+            end_time=now + datetime.timedelta(seconds=entry["remaining"]),
+        )
+
+    def _load_youtube(self, entry, watch_input=True):
+        """Start a YouTube video at the point the lineup is up to. Returns True once
+        it's playing, False if it never started, or a PlayerOutcome if a channel
+        change came in while waiting (watch_input off leaves the remote's presses to
+        whoever else is reading them - the guide, under a preview)."""
+        url = f"https://www.youtube.com/watch?v={entry['id']}"
+        self._l.info(f"Loading YouTube video {entry['id']} at {entry['offset']:.0f}s: {entry['title']}")
+        self._prepare_tracks()
+        self.mpv.command("playlist-clear")
+        # yt-dlp takes a few seconds to find the streams; starting at the right point
+        # saves a seek afterwards
+        self.mpv.command("loadfile", url, "replace", -1, f"start={entry['offset']:.1f}")
+        self.current_playing_file_path = url
+        started = time.time()
+        while time.time() - started < YOUTUBE_START_TIMEOUT:
+            try:
+                if self.mpv.time_pos is not None:
+                    self._choose_tracks()
+                    return True
+            except Exception:
+                pass
+            response = self.input_check_fn() if watch_input else None
+            if response:
+                if self.handle_runtime_command_outcome(response) or self.is_non_interrupting(response):
+                    continue
+                return response
+            time.sleep(0.05)
+        self._l.warning(f"YouTube video {entry['id']} did not start - skipping it")
+        self._youtube_broken.add(entry["id"])
+        return False
+
+    def play_youtube(self, network_name):
+        """Play a YouTube playlist channel (fs42/youtube_channel.py) through mpv: the
+        lineup says what's on and how far in, mpv plays it, and on to the next when
+        its slot ends - until a channel change."""
+        if self._parental_controls_required(network_name):
+            if self.parental_unlocked_network != network_name:
+                return PlayerOutcome(PlayerState.PARENTAL_CONTROLS, network_name)
+        self._preview_network = network_name
+        self._close_now_playing()
+        conf = self.station_config
+        if self.banner_pending:
+            # a new tune
+            self._take_focus()
+            self.banner_pending = False
+            self._banner_request = user_settings.load_settings()["channel_banner"] == "on"
+
+        finished = None
+        while True:
+            try:
+                entry = self._youtube_entry(network_name, finished)
+            except Exception as e:
+                self._l.error(f"No lineup for {network_name}: {e}")
+                entry = None
+            if entry is None:
+                return PlayerOutcome(PlayerState.FAILED)
+            game = entry.get("game")
+            url = f"https://www.youtube.com/watch?v={entry['id']}"
+            update_status_socket(
+                "playing", network_name, conf["channel_number"],
+                game["matchup"] if game else entry["title"],
+                file_path=url, content_type="feature",
+            )
+
+            if self.current_playing_file_path == url and self.mpv.time_pos is not None:
+                # still playing from before the guide or the menu - carry on
+                outcome = True
+            else:
+                self.mpv.panscan = self._panscan()
+                self.mpv.keepaspect = True
+                self.mpv.vf = ""
+                outcome = self._load_youtube(entry)
+                if outcome is True:
+                    self.caption.show(game)
+            if isinstance(outcome, PlayerOutcome):
+                self.caption.hide()
+                return outcome
+            if outcome is False:
+                continue  # marked broken - the next one in the lineup stands in
+
+            self.bug.show(conf)
+            if self._banner_request:
+                self._banner_request = None
+                self.banner.show(conf, self._youtube_block(entry))
+
+            # play out the slot, or until mpv runs out of video first - then that one is
+            # done, and the next in the lineup comes on early rather than replaying it
+            slot_end = time.time() + entry["remaining"]
+            finished = None
+            while time.time() < slot_end:
+                time.sleep(0.05)
+                # a tune starts with static and a rolling picture that settles - like
+                # every other channel, this is where it settles
+                if not self.skip_reception_check:
+                    self.update_reception()
+                try:
+                    if self.mpv.command("get_property", "idle-active"):
+                        finished = entry["id"]
+                        break
+                except Exception:
+                    pass
+                response = self.input_check_fn()
+                if response:
+                    if self.handle_runtime_command_outcome(response):
+                        continue
+                    if self.is_non_interrupting(response):
+                        continue
+                    self.caption.hide()
+                    return response
+            self.caption.hide()
+
     def play_slot(self, network_name, when):
         liquid = LiquidManager()
 
@@ -1023,6 +1791,7 @@ class StationPlayer:
             if self.parental_unlocked_network != network_name:
                 return PlayerOutcome(PlayerState.PARENTAL_CONTROLS, network_name)
 
+        self._preview_network = network_name
         try:
             play_point = liquid.get_play_point(network_name, when)
             self._current_playing = play_point
@@ -1036,7 +1805,18 @@ class StationPlayer:
             self.current_playing_file_path = None
             self.current_playing_block_title = None
             return PlayerOutcome(PlayerState.FAILED)
-        
+
+        if self.banner_pending:
+            # a new tune
+            self._take_focus()
+            self.banner_pending = False
+            if user_settings.load_settings()["channel_banner"] == "on":
+                try:
+                    block = liquid.get_programming_block(network_name, when)
+                except Exception:
+                    block = None  # streams have no schedule block - show the channel alone
+                self._banner_request = (self.station_config, block)
+
         return self._play_from_point(play_point)
 
     def _play_from_point(self, play_point: PlayPoint):
@@ -1067,6 +1847,16 @@ class StationPlayer:
                 content_type = getattr(entry, 'content_type', 'feature')  # Get content_type from entry, default to 'feature'
                 media_type = getattr(entry, 'media_type', 'video')  # Get media_type from entry, default to 'video'
                 worked = self.play_file(entry.path, file_duration=entry.duration, offset_seconds=total_skip, is_stream=is_stream, title=title, content_type=content_type, media_type=media_type)
+                # the logo bug is up for the show itself, not bumps and breaks
+                if worked and content_type == "feature":
+                    self.bug.show(self.station_config)
+                else:
+                    self.bug.hide()
+                if self._banner_request:
+                    # wait until the picture is up so the banner isn't spent on a black screen
+                    banner_conf, banner_block = self._banner_request
+                    self._banner_request = None
+                    self.banner.show(banner_conf, banner_block)
                 if self._pending_response:
                     response = self._pending_response
                     self._pending_response = None

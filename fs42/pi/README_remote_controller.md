@@ -42,6 +42,8 @@ Don't have Flirc? Want different keys? Easy! Just edit the `KEY_MAPPINGS` sectio
 ```python
 KEY_MAPPINGS = {
     'show_guide': 'home',        # Show program guide
+    'show_settings': 'menu',     # Open/close the settings menu
+    'show_info': 'info',         # Show/hide the channel banner
     'volume_up': 'right',        # Increase volume
     'volume_down': 'left',       # Decrease volume  
     'channel_up': 'up',          # Next channel

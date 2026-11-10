@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>YouTube Channel</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      cursor: none;
+    }
+    #player {
+      width: 100vw;
+      height: 100vh;
+      border: 0;
+    }
+    /* covers YouTube's title and play/pause overlay while a video starts */
+    #cover {
+      position: fixed;
+      inset: 0;
+      background: #000;
+    }
+    /* which game a highlight is, in the bottom left as each one starts */
+    #game {
+      position: fixed;
+      left: 4vw;
+      bottom: 7vh;
+      max-width: 60vw;
+      padding: 1.6vh 2.4vh 1.8vh;
+      background: rgba(10, 30, 80, 0.82);
+      border-left: 0.9vh solid #ffaa00;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-shadow: 0 0.2vh 0.4vh rgba(0, 0, 0, 0.6);
+      opacity: 0;
+      transition: opacity 0.6s ease;
+    }
+    #game.showing {
+      opacity: 1;
+    }
+    #game-matchup {
+      font-size: 4.6vh;
+      font-weight: bold;
+    }
+    #game-date {
+      font-size: 3vh;
+      margin-top: 0.4vh;
+      color: #b9c8ea;
+    }
+    #game-note {
+      font-size: 2.8vh;
+      margin-top: 0.4vh;
+      color: #ffaa00;
+      font-weight: bold;
+    }
+    #status {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa4b8;
+      font: bold 3vh Arial, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <div id="cover"></div>
+  <div id="game"><div id="game-matchup"></div><div id="game-date"></div><div id="game-note"></div></div>
+  <div id="status">Loading…</div>
+  <script src="youtubechannel.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>

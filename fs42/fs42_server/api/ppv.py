@@ -5,12 +5,44 @@ from typing import List, Optional
 import os
 import logging
 import mimetypes
+import re
+from urllib.parse import quote
 from fs42.station_manager import StationManager
 from fs42.nfo_agent import NFOAgent
 from .tmdb_helper import get_tmdb_helper
 from .player import connected_command_queue
 
 router = APIRouter(prefix="/ppv", tags=["ppv"])
+
+VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.m2ts', '.ts'}
+IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png']
+TMDB_BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/w1280"
+
+
+def _video_files(content_dir):
+    """Every video under content_dir, subfolders (and folders linked in) included:
+    (full path, path relative to content_dir)."""
+    for root, dirs, files in os.walk(content_dir, followlinks=True):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for name in sorted(files):
+            if os.path.splitext(name)[1].lower() in VIDEO_EXTENSIONS and not name.startswith("."):
+                full = os.path.join(root, name)
+                yield full, os.path.relpath(full, content_dir)
+
+
+def _title_and_year(base_name):
+    # "Akira (1988)" -> ("Akira", "1988")
+    m = re.match(r"^(.*?)\s*\((\d{4})\)\s*$", base_name)
+    return (m.group(1), m.group(2)) if m else (base_name, "")
+
+
+def _sort_title(title):
+    t = title.lower().lstrip("(")
+    for article in ("the ", "a ", "an "):
+        if t.startswith(article):
+            return t[len(article):]
+    return t
+
 
 # Pydantic Models
 class NFOData(BaseModel):
@@ -27,6 +59,10 @@ class PPVContent(BaseModel):
     has_nfo: bool
     has_image: bool
     image_url: Optional[str] = None
+    # a wide still from the film for behind the menu, and which subfolder it's shelved
+    # under (catalog/ppv/anime-movies -> "anime-movies"), from TMDB when it's known
+    backdrop_url: Optional[str] = None
+    shelf: Optional[str] = None
 
 class PPVContentListResponse(BaseModel):
     """Response containing list of PPV content"""
@@ -53,7 +89,7 @@ class PlayFileResponse(BaseModel):
 # Endpoints
 
 @router.get("/{channel_number}", response_model=PPVContentListResponse)
-async def get_ppv_content(channel_number: int, variation: Optional[str] = None):
+def get_ppv_content(channel_number: int, variation: Optional[str] = None):
     """
     Get PPV content for a specific channel.
     Reads the content_dir from the station config and returns all video files with their NFO metadata.
@@ -95,91 +131,89 @@ async def get_ppv_content(channel_number: int, variation: Optional[str] = None):
             detail=f"Content path '{content_dir}' is not a directory"
         )
 
-    # Read directory contents
+    # Read directory contents - each movie may sit in its own "Title (Year)" folder
     try:
         contents = []
-        video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
+        for file_path, rel_path in _video_files(content_dir):
+            filename = os.path.basename(file_path)
+            base_path = os.path.splitext(file_path)[0]
+            base_name = os.path.splitext(filename)[0]
 
-        for filename in sorted(os.listdir(content_dir)):
-            file_path = os.path.join(content_dir, filename)
+            # Look for corresponding NFO file
+            nfo_data = None
+            has_nfo = False
 
-            # Skip directories
-            if os.path.isdir(file_path):
-                continue
+            file_meta = NFOAgent.read_metadata_from_disk(file_path)
+            if file_meta:
+                fields = NFOAgent.display_fields(file_meta)
+                nfo_data = NFOData(
+                    title=fields["title"],
+                    info=fields["info"],
+                    description=fields["description"],
+                )
+                has_nfo = True
 
-            # Get file extension
-            _, ext = os.path.splitext(filename)
-
-            # Only process video files
-            if ext.lower() in video_extensions:
-                base_path = os.path.splitext(file_path)[0]
-                base_name = os.path.splitext(filename)[0]
-
-                # Look for corresponding NFO file
-                nfo_data = None
-                has_nfo = False
-
-                file_meta = NFOAgent.read_metadata_from_disk(file_path)
-                if file_meta:
-                    fields = NFOAgent.display_fields(file_meta)
-                    nfo_data = NFOData(
-                        title=fields["title"],
-                        info=fields["info"],
-                        description=fields["description"],
-                    )
-                    has_nfo = True
-
-                # Look for corresponding image file (jpg, jpeg, png)
-                image_url = None
-                has_image = False
-                image_extensions = ['.jpg', '.jpeg', '.png']
-
-                for img_ext in image_extensions:
-                    img_path = base_path + img_ext
-                    if os.path.exists(img_path):
-                        # Create URL for image endpoint
-                        image_url = f"/ppv/image/{channel_number}/{base_name}{img_ext}"
-                        has_image = True
-                        break
-
-                # If no NFO or no image, try TMDB
-                tmdb_data = None
-                if not has_nfo or not has_image:
-                    tmdb_helper = get_tmdb_helper()
-                    if tmdb_helper.is_configured():
-                        # Pass the raw filename - TMDB helper will parse year and normalize
-                        tmdb_data = tmdb_helper.search_movie(base_name)
-
-                # Use TMDB data if no NFO
-                if not has_nfo:
-                    if tmdb_data:
-                        nfo_data = NFOData(
-                            title=tmdb_data.get("title", base_name),
-                            info=tmdb_data.get("release_date", "")[:4] if tmdb_data.get("release_date") else "",
-                            description=tmdb_data.get("overview", "")
-                        )
-                        logger.info(f"Using TMDB metadata for {base_name}")
-                    else:
-                        nfo_data = NFOData(
-                            title=base_name,
-                            info="",
-                            description=""
-                        )
-
-                # Use TMDB poster if no local image
-                if not has_image and tmdb_data and tmdb_data.get("poster_url"):
-                    image_url = tmdb_data["poster_url"]
+            # Look for a poster: same name as the video, or poster/folder.jpg in its folder
+            image_url = None
+            has_image = False
+            folder = os.path.dirname(file_path)
+            candidates = [base_path + ext for ext in IMAGE_EXTENSIONS]
+            if folder != content_dir:
+                candidates += [os.path.join(folder, name + ext)
+                               for name in ("poster", "folder", "cover") for ext in IMAGE_EXTENSIONS]
+            for img_path in candidates:
+                if os.path.exists(img_path):
+                    rel_image = os.path.relpath(img_path, content_dir)
+                    image_url = f"/ppv/image/{channel_number}/{quote(rel_image)}"
                     has_image = True
-                    logger.info(f"Using TMDB poster for {base_name}")
+                    break
 
-                contents.append(PPVContent(
-                    filename=filename,
-                    video_path=file_path,
-                    nfo=nfo_data,
-                    has_nfo=has_nfo,
-                    has_image=has_image,
-                    image_url=image_url
-                ))
+            # If no NFO or no image, try TMDB
+            tmdb_data = None
+            if not has_nfo or not has_image:
+                tmdb_helper = get_tmdb_helper()
+                if tmdb_helper.is_configured():
+                    # Pass the raw filename - TMDB helper will parse year and normalize
+                    tmdb_data = tmdb_helper.search_movie(base_name)
+
+            # Use TMDB data if no NFO
+            if not has_nfo:
+                if tmdb_data:
+                    nfo_data = NFOData(
+                        title=tmdb_data.get("title", base_name),
+                        info=tmdb_data.get("release_date", "")[:4] if tmdb_data.get("release_date") else "",
+                        description=tmdb_data.get("overview", "")
+                    )
+                    logger.debug(f"Using TMDB metadata for {base_name}")
+                else:
+                    title, year = _title_and_year(base_name)
+                    nfo_data = NFOData(title=title, info=year, description="")
+
+            # Use TMDB poster if no local image
+            if not has_image and tmdb_data and tmdb_data.get("poster_url"):
+                image_url = tmdb_data["poster_url"]
+                has_image = True
+
+            backdrop_url = None
+            if tmdb_data is None and get_tmdb_helper().is_configured():
+                tmdb_data = get_tmdb_helper().search_movie(base_name)
+            if tmdb_data and tmdb_data.get("backdrop_path"):
+                backdrop_url = f"{TMDB_BACKDROP_BASE_URL}{tmdb_data['backdrop_path']}"
+            shelf = rel_path.split(os.sep)[0] if os.sep in rel_path else None
+
+            contents.append(PPVContent(
+                filename=filename,
+                video_path=file_path,
+                nfo=nfo_data,
+                has_nfo=has_nfo,
+                has_image=has_image,
+                image_url=image_url,
+                backdrop_url=backdrop_url,
+                shelf=shelf,
+            ))
+
+        # alphabetical by title, the way a video store shelves them ("The Matrix" under M)
+        contents.sort(key=lambda c: _sort_title(c.nfo.title if c.nfo else c.filename))
 
         return PPVContentListResponse(
             channel_number=channel_number,
@@ -197,7 +231,7 @@ async def get_ppv_content(channel_number: int, variation: Optional[str] = None):
         )
 
 
-@router.get("/image/{channel_number}/{filename}")
+@router.get("/image/{channel_number}/{filename:path}")
 async def get_ppv_image(channel_number: int, filename: str):
     """
     Serve an image file from a channel's content_dir.
@@ -235,8 +269,8 @@ async def get_ppv_image(channel_number: int, filename: str):
             detail="Only image files are allowed"
         )
 
-    # Security: Prevent directory traversal
-    if '..' in filename or '/' in filename or '\\' in filename:
+    # Security: Prevent directory traversal (a movie's own folder is fine)
+    if os.path.isabs(filename) or '..' in filename.replace('\\', '/').split('/') or '\\' in filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid filename"
@@ -333,8 +367,9 @@ async def play_file(channel_number: int, play_request: PlayFileRequest, request:
 
 @router.post("/{channel_number}/key/{key_name}")
 async def send_key(channel_number: int, key_name: str, request: Request):
-    """Send a keypress to the PPV web channel."""
-    allowed_keys = {"PageUp", "PageDown", "Enter"}
+    """Send a keypress to the PPV web channel (or the settings menu, which takes
+    digits too, for typing a ZIP code)."""
+    allowed_keys = {"PageUp", "PageDown", "Enter", "ArrowLeft", "ArrowRight", *"0123456789"}
     if key_name not in allowed_keys:
         raise HTTPException(status_code=400, detail=f"Key must be one of: {allowed_keys}")
     command_queue = connected_command_queue(request)

@@ -59,6 +59,7 @@ class StationManager(object):
                     "video_seek_timeout": 10,
                     "follow_static_symlinks": False,
                     "custom_holidays": {},
+                    "title_aliases": {},
                 }
                 self._number_index = {}
                 self._name_index = {}
@@ -66,6 +67,7 @@ class StationManager(object):
                 self.load_main_config()
                 self.load_json_stations()
             self.guide_config = None
+            self.settings_config = None
             for i in range(len(self.stations)):
                 station = self.stations[i]
                 if station["network_type"] == "guide":
@@ -90,6 +92,9 @@ class StationManager(object):
                     if "static/customguide/customguide.html" in station["web_url"]:
                         self.guide_config = station
                         logging.getLogger().info("Setting web channel as guide channel")
+                    elif "static/settingsmenu/settingsmenu.html" in station["web_url"]:
+                        self.settings_config = station
+                        logging.getLogger().info("Setting web channel as settings menu channel")
 
     def local_server_url(self):
         return f"http://127.0.0.1:{self.server_conf.get('server_port', 4242)}"
@@ -166,6 +171,7 @@ class StationManager(object):
                     "parental_controls_pin",
                     "parental_controls_theme",
                     "custom_holidays",
+                    "title_aliases",
                 ]
 
                 for key in to_check:

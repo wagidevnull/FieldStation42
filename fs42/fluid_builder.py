@@ -2,12 +2,20 @@ import logging
 import sqlite3
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.append(os.getcwd())
 
 from fs42.fluid_statements import FluidStatements
 from fs42.media_processor import MediaProcessor
 from fs42.station_manager import StationManager
+
+# black frame scans running at once
+BREAK_SCAN_WORKERS = 2
+# how fast each scan may read its file - together they leave most of a 100 Mbit
+# link to a media share free for the TV itself. FS42_BREAK_SCAN_MBPS sets it in
+# megabytes a second; 0 is no limit, for when nothing is being watched.
+BREAK_SCAN_BYTES_PER_SEC = float(os.environ.get("FS42_BREAK_SCAN_MBPS", 2.5)) * 1024 * 1024
 
 class FluidBuilder:
     def __init__(self, db_path=None):
@@ -68,18 +76,31 @@ class FluidBuilder:
                 if cached:
                     cached_files[path] = cached
 
+            scanned = {row[0] for row in connection.execute("SELECT path FROM break_points WHERE points != 'null'")}
+            todo = []
             for file in file_list:
                 rfp = os.path.realpath(file)
                 if rfp in cached_files:
                     cached = cached_files[rfp]
-                    if FluidStatements.get_break_points(connection, rfp):
+                    if rfp in scanned:
                         self._l.info(f"Breaks already exists for {rfp}")
+                    elif MediaProcessor.chapters_mark_breaks(FluidStatements.get_chapter_points(connection, rfp), cached.duration):
+                        self._l.info(f"Chapter markers already give breaks for {rfp}")
                     else:
-                        breaks = MediaProcessor.black_detect(rfp, cached.duration)
-                        FluidStatements.add_break_points(connection, rfp, breaks)
+                        todo.append((rfp, cached.duration))
                 else:
                     self._l.warning(f"{rfp} is not in catalog cache - not adding break points.")
-            connection.commit()
+
+            # each file is its own ffmpeg, so a couple at once keeps the CPU busy; every
+            # result is saved as it comes in, so a long scan can be stopped and picked up again
+            self._l.info(f"Detecting breaks in {len(todo)} files")
+            with ThreadPoolExecutor(max_workers=BREAK_SCAN_WORKERS) as pool:
+                jobs = {pool.submit(MediaProcessor.black_detect, rfp, duration,
+                                    max_bytes_per_sec=BREAK_SCAN_BYTES_PER_SEC): rfp
+                        for rfp, duration in todo}
+                for done, job in enumerate(as_completed(jobs), 1):
+                    FluidStatements.add_break_points(connection, jobs[job], job.result())
+                    self._l.info(f"Break scan {done}/{len(todo)} done")
         finally:
             connection.close()
 

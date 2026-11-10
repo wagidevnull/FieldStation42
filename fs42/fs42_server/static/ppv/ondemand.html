@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pay-Per-View</title>
+    <link rel="stylesheet" href="ondemand.css">
+</head>
+<body>
+    <div class="backdrop" id="backdropA"></div>
+    <div class="backdrop" id="backdropB"></div>
+    <div class="shade"></div>
+
+    <header class="top">
+        <img class="channel-logo" src="/static/logos/ppv.svg" alt="">
+        <div class="channel-name">
+            <div class="name">Pay-Per-View</div>
+            <div class="tagline">Movies &amp; Series On Demand</div>
+        </div>
+        <div class="clock">
+            <div class="time" id="clockTime"></div>
+            <div class="date" id="clockDate"></div>
+        </div>
+        <div class="pip" id="pip"></div>
+    </header>
+
+    <main id="main">
+        <section class="shelf">
+            <div class="shelf-heading" id="shelfHeading"></div>
+            <div class="list-window">
+                <ol class="list" id="list"></ol>
+            </div>
+        </section>
+
+        <section class="feature" id="feature">
+            <div class="poster-frame">
+                <img class="poster" id="poster" alt="">
+                <div class="no-poster" id="noPoster"></div>
+            </div>
+            <div class="details">
+                <div class="tags">
+                    <span class="tag" id="shelfTag"></span>
+                    <span class="year" id="year"></span>
+                </div>
+                <h1 class="title" id="title"></h1>
+                <p class="description" id="description"></p>
+                <div class="order"><span class="key">SELECT</span><span class="hint-label" id="orderLabel">to watch now</span></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="hints" id="hints"></footer>
+
+    <div class="synopsis" id="synopsis">
+        <div class="synopsis-card">
+            <img class="synopsis-poster" id="synopsisPoster" alt="">
+            <div class="synopsis-text">
+                <div class="tags">
+                    <span class="tag" id="synopsisTag"></span>
+                    <span class="year" id="synopsisYear"></span>
+                </div>
+                <div class="synopsis-title" id="synopsisTitle"></div>
+                <div class="synopsis-body" id="synopsisBody"></div>
+                <div class="synopsis-hints">
+                    <span><span class="key key-go">SELECT</span><span class="hint-label">Watch</span></span>
+                    <span><span class="key arrow-left"><i></i></span><span class="hint-label">Back to the list</span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="starting" id="starting">
+        <div class="starting-card">
+            <div class="starting-label">Now Starting</div>
+            <div class="starting-title" id="startingTitle"></div>
+            <div class="starting-sub">Enjoy the show!</div>
+        </div>
+    </div>
+
+    <div class="flash" id="flash"></div>
+
+    <div class="loading" id="loading">Loading...</div>
+
+    <audio id="music" preload="auto"></audio>
+
+    <script src="/static/fs42_aspect.js"></script>
+    <script src="ondemand.js"></script>
+</body>
+</html>

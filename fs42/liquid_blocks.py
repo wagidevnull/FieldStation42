@@ -110,9 +110,9 @@ class LiquidBlock:
 
         _fluid = FluidBuilder()
 
-        # Prefer chapter markers over black detection
+        # Prefer chapter markers over black detection - when they mark real act breaks
         break_points = _fluid.get_chapters(self.content.realpath)
-        if not break_points:
+        if not MediaProcessor.chapters_mark_breaks(break_points, self.content_duration()):
             # Fall back to black detection if no chapters
             break_points = _fluid.get_breaks(self.content.realpath)
 

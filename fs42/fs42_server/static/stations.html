@@ -203,6 +203,9 @@
                             <button class="pure-button" data-name="${escapeHtml(station.network_name)}" onclick="duplicateStation(this.dataset.name)">
                                 Duplicate
                             </button>
+                            <button class="pure-button sv-danger" data-name="${escapeHtml(station.network_name)}" onclick="deleteStation(this.dataset.name)">
+                                Delete
+                            </button>
                         </div>
                     </div>
                 `;
@@ -310,6 +313,20 @@
 
             } catch (error) {
                 alert(`Error duplicating station: ${error.message}`);
+            }
+        }
+
+        async function deleteStation(networkName) {
+            if (!confirm(`Delete station "${networkName}"?\n\nThis removes its config file and clears its catalog and schedule. Your media files are not touched.`)) {
+                return;
+            }
+
+            try {
+                await window.fs42Api.delete(`stations/${encodeURIComponent(networkName)}`);
+                await loadStations();
+                applyFilters();
+            } catch (error) {
+                alert(`Error deleting station: ${error.detail || error.message}`);
             }
         }
 

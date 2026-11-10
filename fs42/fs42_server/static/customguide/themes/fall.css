@@ -1,0 +1,114 @@
+/* Fall - a look laid over the base theme (00s), picked with the Guide Theme
+   setting: muted oranges and browns over a leafy street, a burnt-orange TV
+   Guide button and fall leaves heaped around the preview. Artwork lives in
+   themes/fall/. */
+:root {
+  --bg-color: transparent;
+  --text-color: #f3e6d2;
+  --text-panel-bg: transparent;
+  --text-panel-color: #f3e6d2;
+  --video-panel-bg: transparent;
+  --text-panel-title-color: #e39a55;
+
+  /* channel column: a dark brown slab with cream numbers */
+  --grid-channel-bg: #2a170b;
+  --channel-number-color: #f3e6d2;
+  --channel-name-color: #f3e6d2;
+  --channel-pill-radius: 0.3em;
+
+  /* grid chrome: solid browns, bevelled like the base theme's blocks */
+  --grid-header-bg: #1e1007;
+  --time-slot-bg: transparent;
+  --time-heading-color: #f3e6d2;
+  --grid-row-odd-bg: #24140a;
+  --grid-row-even-bg: #20120a;
+  --program-block-bg: #3e2514;
+  --program-block-border: #6e4526;
+  --program-block-even-bg: #362011;
+  --program-block-even-border: #643e22;
+  --program-block-shadow: #160a03;
+  --program-current-bg: #57331a;
+  --program-current-border: #8a5a32;
+  --program-current-color: #f8d9b0;
+  --show-title-color: #f3e6d2;
+
+  /* the selected show: muted pumpkin orange */
+  --nav-selected-bg: #c47a3a;
+  --nav-selected-border: #f3d3a6;
+  --nav-selected-color: #2a1406;
+
+  /* the leaf frame around the preview: the picture sits in the frame's opening,
+     this far in from each edge (fractions of the panel) - keep these in step
+     with the opening in fall/leaf_frame.svg (see fall/make_leaf_frame.py) */
+  --video-inset-x: 0.06;
+  --video-inset-top: 0.09756;
+  --video-inset-bottom: 0.09756;
+  /* panel shape that leaves a 16:9 opening once the frame is taken off */
+  --video-aspect-ratio: 1.626;
+}
+
+/* the street, already softened and darkened a touch in the picture itself */
+body {
+  background: url("fall/wallpaper.jpg") center / cover no-repeat fixed, #3a2616;
+}
+
+/* the show info sits straight on the street, with a heavier shadow to keep it readable */
+#top-panel {
+  background: transparent;
+}
+
+#text-panel, #text-panel * {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 0, 0, 0.55);
+}
+
+/* the provider logo in the show-title orange - whichever one the Provider Logo
+   setting picks */
+#info-logo img[src$="/directv.svg"] { content: url("fall/logos/directv.svg"); }
+#info-logo img[src$="/comcast.svg"] { content: url("fall/logos/comcast.svg"); }
+#info-logo img[src$="/dish.svg"] { content: url("fall/logos/dish.svg"); }
+
+#info-logo img, #info-brand img {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+}
+
+/* the leaves - the panel's own fill is replaced by the frame (it has a black
+   opening). The frame image runs 30 of its 1000 x 615 units past the panel on
+   every side, so the outermost leaves aren't sliced off at the panel's edge */
+#video-panel {
+  position: relative;
+  overflow: visible;
+  background: transparent !important;
+}
+
+#video-panel::before {
+  content: "";
+  position: absolute;
+  left: -3%;
+  right: -3%;
+  top: -4.878%;
+  bottom: -4.878%;
+  background: url("fall/leaf_frame.svg") 0 0 / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+/* a guide without a live preview plays its own video - keep that in the opening too */
+#video-panel video {
+  position: absolute;
+  left: calc(var(--video-inset-x) * 100%);
+  right: calc(var(--video-inset-x) * 100%);
+  top: calc(var(--video-inset-top) * 100%);
+  bottom: calc(var(--video-inset-bottom) * 100%);
+  width: auto;
+  height: auto;
+}
+
+/* the TV Guide logo as a burnt-orange button */
+#info-brand img {
+  content: url("fall/guide_logo.png");
+}
+
+/* the selected show: a soft pumpkin-to-rust gradient */
+.grid-program-block.nav-cell,
+.grid-program-block.current.nav-cell {
+  background: linear-gradient(to bottom, #d89050, #b0642c) !important;
+}

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9f1f8"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f97dc"/>
+      <stop offset="0.35" stop-color="#2a7fcb"/>
+      <stop offset="1" stop-color="#1a62b2"/>
+    </linearGradient>
+    <linearGradient id="swoosh" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c7dcee" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#c7dcee" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#c7dcee" stop-opacity="0.2"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#body)"/>
+  <!-- a soft lighter wave across the blue, like the satellite box's backdrop -->
+  <path d="M0 420 C 500 360, 1100 520, 1920 400 L1920 1080 L0 1080 Z" fill="url(#sheen)"/>
+  <!-- the white band across the top, with pale swooshes running through it -->
+  <rect width="1920" height="216" fill="url(#band)"/>
+  <path d="M-40 150 C 420 40, 980 30, 1960 120 L1960 160 C 980 70, 420 90, -40 190 Z" fill="url(#swoosh)" opacity="0.7"/>
+  <path d="M300 216 C 700 120, 1300 60, 1960 40 L1960 70 C 1300 100, 760 160, 420 216 Z" fill="url(#swoosh)" opacity="0.55"/>
+  <rect y="214" width="1920" height="3" fill="#ffffff"/>
+</svg>

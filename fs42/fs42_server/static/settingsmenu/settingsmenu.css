@@ -1,0 +1,240 @@
+/* 2000s satellite-box look, matching the 00s guide theme.
+   Sizes are in vh so the menu fits any output resolution, CRT included. */
+:root {
+  --bg-color: #1a3a78;
+  --panel-bg: #162e65;
+  --header-bg: #0a1e50;
+  --row-bg: #1e4090;
+  --row-border: #0e2a60;
+  --text-color: #ffffff;
+  --muted-color: #b9c8ea;
+  --accent: #ffaa00;
+  --accent-text: #0a1e50;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Arial', 'Helvetica Neue', sans-serif;
+  font-size: 3.4vh;
+  cursor: none;
+}
+
+#menu-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+#menu-header {
+  display: flex;
+  align-items: center;
+  gap: 1.2em;
+  height: 15vh;
+  padding: 0 1.4em;
+  background: linear-gradient(to bottom, #13306e, var(--header-bg));
+  border-bottom: 0.25vh solid var(--accent);
+}
+
+#menu-logo img {
+  height: 9vh;
+  width: auto;
+  max-width: 30vw;
+  object-fit: contain;
+  display: block;
+}
+
+#menu-logo .text-logo {
+  font-weight: bold;
+  font-size: 1.4em;
+}
+
+#menu-title {
+  flex: 1;
+  font-size: 1.6em;
+  font-weight: bold;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+#menu-clock {
+  text-align: right;
+  line-height: 1.25;
+}
+
+#clock-day {
+  color: var(--muted-color);
+  font-size: 0.8em;
+}
+
+#clock-time {
+  font-weight: bold;
+}
+
+#menu-body {
+  flex: 1;
+  display: flex;
+  gap: 1.2em;
+  padding: 1.2em 1.4em;
+  min-height: 0;
+}
+
+#menu-list {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  /* a list taller than the screen scrolls - the page keeps the cursor in view */
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+#menu-list > * {
+  flex-shrink: 0;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.5em 0.8em;
+  background: var(--row-bg);
+  border: 0.2vh solid var(--row-border);
+  border-radius: 0.3em;
+}
+
+.menu-row.selected {
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 0.3vh #ffffff;
+}
+
+.menu-row > span {
+  white-space: nowrap;
+}
+
+.menu-row .row-value {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-weight: bold;
+}
+
+.menu-row .caret {
+  font-size: 0.7em;
+}
+
+/* the row whose drop-down is open - the cursor has moved into its options */
+.menu-row.open {
+  border-color: var(--accent);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* the typed-in row being edited - its digits show in place */
+.menu-row.typing {
+  border-color: var(--accent);
+}
+
+.menu-row .typed {
+  font-family: 'DejaVu Sans Mono', monospace;
+  letter-spacing: 0.15em;
+}
+
+.menu-dropdown {
+  display: flex;
+  flex-direction: column;
+  margin: -0.35em 0 0 1.2em;
+  background: var(--header-bg);
+  border: 0.2vh solid var(--accent);
+  border-top: none;
+  border-radius: 0 0 0.3em 0.3em;
+}
+
+.menu-option {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.4em 0.8em;
+  white-space: nowrap;
+}
+
+.menu-option .check {
+  width: 1em;
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.menu-option.cursor {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.menu-option.cursor .check {
+  color: var(--accent-text);
+}
+
+.menu-row.action {
+  justify-content: center;
+  font-weight: bold;
+}
+
+/* Exit / Back sit at the bottom when the list is short enough to leave room */
+.menu-row.action:last-child {
+  margin-top: auto;
+}
+
+#menu-info {
+  flex: 2;
+  padding: 0.8em 1em;
+  background: var(--panel-bg);
+  border: 0.2vh solid var(--row-border);
+  border-radius: 0.3em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+
+#info-label {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+#info-desc {
+  font-size: 0.85em;
+  line-height: 1.35;
+}
+
+#info-status {
+  margin-top: auto;
+  font-size: 0.8em;
+  color: var(--accent);
+  min-height: 1.3em;
+}
+
+#menu-footer {
+  display: flex;
+  justify-content: center;
+  gap: 2.2em;
+  height: 8vh;
+  align-items: center;
+  background: var(--header-bg);
+  font-size: 0.75em;
+  color: var(--muted-color);
+}
+
+#menu-footer b {
+  color: var(--text-color);
+}

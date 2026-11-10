@@ -1,9 +1,12 @@
+import logging
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from fs42.station_manager import StationManager
 from fs42.station_io import StationIO
 from fs42.liquid_manager import LiquidManager
+from fs42.liquid_api import LiquidAPI
+from fs42.catalog_api import CatalogAPI
 
 router = APIRouter(prefix="/stations", tags=["stations"])
 
@@ -187,6 +190,16 @@ async def delete_station(network_name: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Station '{network_name}' not found"
         )
+
+    # Clear the station's catalog and schedule from the db so a future station
+    # with the same name doesn't inherit them. Draft stations aren't loaded, so skip those.
+    station = station_manager.station_by_name(network_name)
+    if station is not None:
+        try:
+            LiquidAPI.delete_blocks(station)
+            CatalogAPI.delete_catalog(station)
+        except Exception as e:
+            logging.getLogger("STATIONS").warning(f"Failed to clear data for {network_name}: {e}")
 
     # Delete the configuration (StationManager handles file deletion via StationIO)
     success, message = station_manager.delete_station_config(network_name)

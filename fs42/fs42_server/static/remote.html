@@ -49,10 +49,10 @@
         <!-- Nav Pad - swaps in for the number pad to drive web channels (PPV). -->
         <div class="button-grid nav-pad" id="nav-pad" hidden>
             <button class="remote-btn nav-btn nav-up" data-key="nav_up">▲</button>
-            <!-- PPV binds no horizontal keys - present for the pad shape, inert. -->
-            <button class="remote-btn nav-btn nav-left" data-key="nav_left" disabled>◀</button>
+            <!-- Left/right move through time in the guide; PPV ignores them. -->
+            <button class="remote-btn nav-btn nav-left" data-key="nav_left">◀</button>
             <button class="remote-btn nav-btn nav-enter" data-key="nav_enter">OK</button>
-            <button class="remote-btn nav-btn nav-right" data-key="nav_right" disabled>▶</button>
+            <button class="remote-btn nav-btn nav-right" data-key="nav_right">▶</button>
             <button class="remote-btn nav-btn pad-toggle-btn" data-key="pad_toggle">123</button>
             <button class="remote-btn nav-btn nav-down" data-key="nav_down">▼</button>
         </div>
@@ -79,10 +79,12 @@
             <button class="remote-btn function-btn" data-key="exit">EXIT</button>
             <button class="remote-btn function-btn" data-key="mute">MUTE</button>
             <button class="remote-btn function-btn" data-key="info">INFO</button>
-            <!-- Cycle MPV tracks without changing channel playback. The player shows
-                 the selected audio/subtitle track on MPV's on-screen display. -->
-            <button class="remote-btn function-btn" data-key="subtitles">SUBS</button>
-            <button class="remote-btn function-btn" data-key="audio">AUDIO</button>
+            <!-- The yellow and blue buttons: the first press shows the audio or subtitle
+                 choices on the TV, each press after that switches to the next one. -->
+            <button class="remote-btn function-btn" data-key="audio" style="background: #ffd700; color: #1a1a1a;">AUDIO</button>
+            <button class="remote-btn function-btn" data-key="subtitles" style="background: #2a7ae0; color: #ffffff;">SUBS</button>
+            <!-- Opens the on-TV settings menu; pressing it again closes the menu. -->
+            <button class="remote-btn function-btn menu-btn" data-key="menu" style="grid-column: 1 / -1;">MENU</button>
         </div>
     </div>
 
@@ -476,6 +478,12 @@
                 case 'nav_enter':
                     await sendPpvKey('Enter', 'SELECT');
                     break;
+                case 'nav_left':
+                    await sendPpvKey('ArrowLeft', 'LEFT');
+                    break;
+                case 'nav_right':
+                    await sendPpvKey('ArrowRight', 'RIGHT');
+                    break;
                 case 'ch_up':
                     display.textContent = 'CHANNEL UP';
                     try {
@@ -546,12 +554,28 @@
                         display.textContent = 'ERROR';
                     }
                     break;
+                case 'menu':
+                    try {
+                        await window.fs42Api.post('player/channels/settings');
+                        display.textContent = 'MENU';
+                        console.log('Settings menu command sent');
+                    } catch (error) {
+                        console.error('Settings menu command failed:', error);
+                        display.textContent = 'ERROR';
+                    }
+                    break;
                 case 'exit':
                     display.textContent = 'EXIT';
                     window.location.href = '/';
                     break;
                 case 'info':
-                    toggleInfoMode();
+                    try {
+                        await window.fs42Api.post('player/banner');
+                        display.textContent = 'INFO';
+                    } catch (error) {
+                        console.error('Banner command failed:', error);
+                        display.textContent = 'ERROR';
+                    }
                     break;
                 case 'subtitles':
                     try {
@@ -589,6 +613,10 @@
                 }, 2000);
             }
         }
+
+        // Tapping the remote's screen flips it between now playing and system info
+        // (the INFO button brings up the channel banner on the TV instead)
+        display.addEventListener('click', toggleInfoMode);
 
         // Initialize display and start polling
         display.textContent = idleDisplayText();

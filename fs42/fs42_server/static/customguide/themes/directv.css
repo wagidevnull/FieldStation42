@@ -1,0 +1,338 @@
+/* DirecTV - a look laid over the base theme (00s), picked with the Guide Theme
+   setting: the satellite box's own guide. A white band across the top with the
+   DIRECTV logo, the show's title and a grey "guide"; a pale blue strip with the
+   time and the show's slot; the description in white on blue; the preview in a
+   white frame with the channel number in its corner; and the listings in a navy
+   frame - channel numbers and names, blue cells, the selected show in yellow - with
+   the coloured button hints along the bottom. Artwork lives in themes/directv/. */
+:root {
+  /* Trade Gothic, as the boxes of the era used - its capitals sit high, so they're nudged down */
+  --font-family: 'Trade Gothic LT Std', 'Liberation Sans Narrow', Arial, sans-serif;
+  --caps-nudge: 0.14em;
+  --time-style: short;
+  --grid-stub: date;
+  --channel-label: name;
+  --grid-snap: rows;
+
+  --navy: #0b2c5e;
+  --navy-deep: #082249;
+  --cell: #1b54a0;
+  --cell-alt: #184c92;
+  --channel-cell: #123a73;
+  --strip: #c6e2f6;
+  --strip-text: #1a3f73;
+  --pale-text: #8cc3ef;
+  --select: #f9a51b;
+
+  --bg-color: transparent;
+  --text-panel-bg: transparent;
+  --video-panel-bg: transparent;
+  --text-panel-color: #ffffff;
+  --text-panel-title-color: #0b2c5e;
+
+  --top-panel-height: 43%;
+  --grid-header-bg: var(--navy);
+  --time-slot-bg: transparent;
+  --time-slot-radius: 0;
+  --time-heading-color: #ffffff;
+
+  --grid-channel-bg: var(--channel-cell);
+  --grid-channel-width: 8.6em;
+  --channel-pill-radius: 0;
+  --channel-pill-margin-v: 0px;
+  --channel-pill-margin-h: 0px;
+  --channel-number-color: #ffffff;
+  --channel-name-color: #ffffff;
+  --channel-block-border: transparent;
+  --channel-block-shadow: transparent;
+
+  --grid-row-odd-bg: var(--navy);
+  --grid-row-even-bg: var(--navy);
+  --row-divider-color: transparent;
+  --program-block-radius: 0;
+  --program-block-bg: var(--cell);
+  --program-block-border: transparent;
+  --program-block-even-bg: var(--cell);
+  --program-block-even-border: transparent;
+  --program-block-shadow: transparent;
+  --program-current-bg: var(--cell);
+  --program-current-border: transparent;
+  --program-current-color: #ffffff;
+  --show-title-color: #ffffff;
+
+  --nav-selected-bg: var(--select);
+  --nav-selected-border: transparent;
+  --nav-selected-color: var(--navy);
+
+  /* the white frame round the preview: the picture sits in its opening, this far
+     in from each edge (fractions of the panel), with a wider white strip along the
+     bottom for the channel number */
+  --video-inset-x: 0.014;
+  --video-inset-top: 0.022;
+  --video-inset-bottom: 0.13;
+  /* a panel shape that leaves a 16:9 opening */
+  --video-aspect-ratio: 1.565;
+}
+
+body {
+  background: url("directv/background.svg") 0 0 / 100% 100% no-repeat, #2a7fcb;
+}
+
+/* the top: everything inside the box's safe area, the preview top right */
+#top-panel {
+  background: transparent;
+  padding: 3.7vh 7.4vw 0;
+  box-sizing: border-box;
+  gap: 1.2vw;
+  align-items: flex-start;
+}
+
+#text-panel.info-mode {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  /* the first row is exactly the white band (20vh, less the panel's top padding) */
+  grid-template-rows: calc(20vh - 3.7vh) auto auto 1fr;
+  align-items: center;
+  column-gap: 0;
+  row-gap: 0;
+  padding: 0;
+  overflow: visible;
+}
+#info-top, #info-right { display: contents; }
+
+/* the DIRECTV logo, whichever provider the setting picks - this is the DirecTV look */
+#info-logo { grid-column: 1; grid-row: 1; align-self: start; padding-right: 2.2vw; }
+#info-logo img,
+#text-panel.has-desc #info-logo img {
+  content: url("../logos/directv.svg");
+  height: 12.5vh;
+  width: auto;
+  max-width: none;
+}
+
+#info-title,
+#text-panel.has-desc #info-title {
+  grid-column: 2; grid-row: 1;
+  align-self: end;
+  /* lined up with the slot time in the strip below it */
+  padding: 0 1.2vw 1.3vh;
+  color: var(--navy);
+  font-size: 4.1vh;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: none;
+}
+
+/* the big grey "guide" in place of the TV Guide logo */
+#info-brand { grid-column: 3; grid-row: 1; align-self: start; }
+#info-brand img { display: none; }
+#info-brand::after {
+  content: "guide";
+  display: block;
+  font-size: 8vh;
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  color: #b4bcc4;
+  text-shadow: 0 1px 0 #ffffff;
+}
+
+/* the pale blue strip: the time now, the show's slot, and the weather in place of a rating */
+#info-datetime, #info-times, #info-weather,
+#text-panel.has-desc #info-times {
+  grid-row: 2;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  height: 5.6vh;
+  margin: 0;
+  padding: 0 1.2vw;
+  background: var(--strip);
+  color: var(--strip-text);
+  font-size: 3.15vh;
+  font-weight: 600;
+  text-shadow: none;
+}
+#info-datetime { grid-column: 1; flex-direction: row; gap: 0.35em; white-space: nowrap; border-right: 0.5vw solid #ffffff; }
+#info-datetime span { font: inherit; color: inherit; }
+#info-datetime, #info-times, #info-temp, #video-badge, #guide-footer, .grid-channel, .grid-program-block .program-title {
+  padding-top: var(--caps-nudge);
+}
+#info-times { grid-column: 2; }
+#info-weather { grid-column: 3; justify-content: flex-end; gap: 0.4em; }
+#info-weather[hidden] { display: flex !important; visibility: hidden; }
+#info-weather img { height: 4.4vh; width: auto; }
+#info-temp { color: var(--strip-text); font-size: 1em; }
+
+/* the episode and description, white on the blue */
+#info-episode, #info-desc,
+#text-panel.has-desc #info-episode {
+  grid-column: 1 / -1;
+  align-self: start;
+  margin: 0;
+  padding: 0 1.2vw;
+  color: #ffffff;
+  font-size: 3.15vh;
+  font-weight: 600;
+  line-height: 1.32;
+  text-shadow: 0 1px 2px rgba(0, 20, 60, 0.45);
+}
+#info-episode { grid-row: 3; padding-top: 0.9vh; }
+#info-desc {
+  grid-row: 4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+#info-episode:empty + #info-desc { padding-top: 0.9vh; }
+#info-channel { display: none; }
+
+/* the preview in its white frame, the channel number in the bottom strip */
+#video-panel {
+  position: relative;
+  align-self: flex-start;
+  height: 26.4vh;
+  width: auto;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 1px rgba(10, 40, 80, 0.35), 0 0.4vh 1.2vh rgba(0, 30, 70, 0.35);
+}
+#video-panel video {
+  position: absolute;
+  left: calc(var(--video-inset-x) * 100%);
+  right: calc(var(--video-inset-x) * 100%);
+  top: calc(var(--video-inset-top) * 100%);
+  bottom: calc(var(--video-inset-bottom) * 100%);
+  width: calc(100% - 2 * var(--video-inset-x) * 100%);
+  height: calc(100% - (var(--video-inset-top) + var(--video-inset-bottom)) * 100%);
+  object-fit: cover;
+  background: #000;
+}
+#video-badge {
+  display: block;
+  position: absolute;
+  right: 3%;
+  bottom: 0;
+  height: calc(var(--video-inset-bottom) * 100%);
+  display: flex;
+  align-items: center;
+  color: var(--navy);
+  font-size: 2.9vh;
+  font-weight: 700;
+}
+
+/* the listings in their navy frame */
+#grid-wrapper {
+  margin: 0 0 3.4vh 7.4vw;
+  padding: 0.35vh 0 0 0.35vh;
+  background: var(--navy);
+  border-radius: 0.9vh 0 0 0.9vh;
+  box-shadow: 0 0.4vh 1.4vh rgba(0, 20, 60, 0.4);
+}
+
+#grid-header {
+  background: var(--navy);
+  margin-bottom: 0.35vh;
+}
+.grid-channel-stub {
+  justify-content: flex-start;
+  padding-left: 0.5em;
+  box-shadow: none;
+}
+.grid-channel-stub #clock {
+  font-size: 0.92em;
+  font-weight: 700;
+  color: #ffffff;
+}
+.grid-time-slot {
+  box-shadow: none;
+  background: transparent;
+  font-size: 0.92em;
+  font-weight: 700;
+  padding-left: 0.3em;
+}
+
+/* rows a hair apart, the navy showing through as the lines between them */
+.grid-row {
+  padding-bottom: 0.35vh;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+.grid-channel {
+  justify-content: flex-start;
+  gap: 0.4em;
+  padding: 0 0.5em;
+  box-shadow: none;
+}
+.grid-channel .channel-number {
+  min-width: 0;
+  font-weight: 600;
+  font-size: 1em;
+}
+.grid-channel .channel-name {
+  text-align: left;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+/* each listing a flat blue cell, the navy between them as the divider */
+.grid-program-block,
+.grid-row:nth-child(even) .grid-program-block,
+.grid-program-block.current {
+  border-left: 0.35vh solid var(--navy);
+  box-shadow: none !important;
+  background-clip: padding-box;
+  padding-left: 0.6em;
+}
+.grid-program-block .program-title {
+  font-weight: 600;
+  font-size: 1em;
+}
+.grid-program-block .program-desc { display: none; }
+
+/* the selected show: flat yellow-orange, navy text */
+.grid-program-block.nav-cell,
+.grid-program-block.current.nav-cell {
+  background-color: var(--select) !important;
+  box-shadow: none !important;
+}
+.grid-program-block.nav-cell .program-title {
+  color: var(--navy) !important;
+  text-shadow: none;
+}
+
+/* the button hints along the bottom of the frame */
+#guide-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 5.4vh;
+  padding: 0 7.4vw 0 0.5em;
+  color: var(--pale-text);
+  font-size: 0.92em;
+  font-weight: 600;
+}
+#guide-footer .footer-hints { display: flex; gap: 2.2em; }
+#guide-footer .footer-hints > span { display: flex; align-items: center; gap: 0.4em; }
+#guide-footer .dot {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  box-shadow: inset 0 -0.12em 0.15em rgba(0, 0, 0, 0.35), inset 0 0.12em 0.15em rgba(255, 255, 255, 0.5);
+}
+#guide-footer .dot.red { background: #e1262c; }
+#guide-footer .dot.green { background: #27a646; }
+#guide-footer .dot.yellow { background: #f3d21b; }
+
+/* the footer sits a hair over the grid, so a row rounded a pixel taller never peeks out under it */
+#guide-footer {
+  position: relative;
+  z-index: 1;
+  margin-top: -0.6vh;
+  background: var(--navy);
+}

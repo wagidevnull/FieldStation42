@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 584.4" preserveAspectRatio="none">
+  <!-- Aero glass frame around the guide's preview, the same width all round.
+       The opening (where the picture goes) is 25 in from every edge. Keep the
+       video-inset settings and corner radius in frutiger.css in step with it. -->
+  <defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a9dcf0" stop-opacity="0.92"/>
+      <stop offset="0.09" stop-color="#5fb0d2" stop-opacity="0.86"/>
+      <stop offset="0.5" stop-color="#2f86ad" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#155f84" stop-opacity="0.9"/>
+    </linearGradient>
+    <!-- the diagonal light streaks of Aero glass -->
+    <linearGradient id="streaks" x1="0" y1="0" x2="1" y2="0.55">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.18" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="0.22" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.6" stop-color="#fff" stop-opacity="0.22"/>
+      <stop offset="0.66" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.8" stop-color="#fff" stop-opacity="0.14"/>
+      <stop offset="0.83" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="ring">
+      <rect width="1000" height="584.4" rx="12" ry="12" fill="#fff"/>
+      <rect x="25" y="25" width="950" height="534.4" rx="3" fill="#000"/>
+    </mask>
+  </defs>
+
+  <!-- the glass, with a sheen along the top edge -->
+  <g mask="url(#ring)">
+    <rect width="1000" height="584.4" rx="12" fill="url(#glass)"/>
+    <rect width="1000" height="584.4" rx="12" fill="url(#streaks)"/>
+    <rect x="2" y="2" width="996" height="12" rx="10" fill="#fff" fill-opacity="0.3"/>
+  </g>
+
+  <!-- outer edges: a dark line, with a bright one just inside it, both following
+       the same rounded corner -->
+  <rect x="0.75" y="0.75" width="998.5" height="582.9" rx="11.25" fill="none" stroke="#0b2a3a" stroke-opacity="0.85" stroke-width="1.5"/>
+  <rect x="2.25" y="2.25" width="995.5" height="579.9" rx="9.75" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="1.5"/>
+
+  <!-- the opening: black, edged the same way the other way round - a bright line
+       on the glass, then a dark one at the picture -->
+  <rect x="25" y="25" width="950" height="534.4" rx="3" fill="#000"/>
+  <rect x="23.5" y="23.5" width="953" height="537.4" rx="4.5" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="25" y="25" width="950" height="534.4" rx="3" fill="none" stroke="#0b2a3a" stroke-opacity="0.9" stroke-width="1.5"/>
+</svg>

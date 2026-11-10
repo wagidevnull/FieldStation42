@@ -16,6 +16,8 @@ sys.path.append(parent)
 
 from fs42.station_manager import StationManager, StationConfigError
 from .api import routers
+from .api.autotune import autotune_monitor
+from .api.youtube import youtube_refresh_monitor
 
 _shutdown_queue = None
 player_command_queue = None
@@ -43,6 +45,10 @@ async def _lifespan(app):
                 except Exception:
                     pass
         asyncio.get_event_loop().create_task(shutdown_monitor())
+    # guide auto-tunes fire from here, so they work whatever the player is showing
+    asyncio.get_event_loop().create_task(autotune_monitor())
+    # YouTube playlist channels read their playlists from here
+    asyncio.get_event_loop().create_task(youtube_refresh_monitor())
     yield
 
 # Create FastAPI app

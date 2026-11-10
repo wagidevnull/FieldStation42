@@ -29,7 +29,16 @@ class TitleParser:
         return word.capitalize()
 
     @staticmethod
-    def parse_title(in_str: str, custom_patterns: list = None, uppercase_words: list = None) -> str:
+    def parse_title(in_str: str, custom_patterns: list = None, uppercase_words: list = None, aliases: dict = None) -> str:
+        title = TitleParser._parse_title(in_str, custom_patterns, uppercase_words)
+        # title_aliases in the main config rename a parsed title for display,
+        # e.g. {"Plur1bus": "Pluribus"} for a show whose files spell it PLUR1BUS
+        if aliases:
+            return aliases.get(title, title)
+        return title
+
+    @staticmethod
+    def _parse_title(in_str: str, custom_patterns: list = None, uppercase_words: list = None) -> str:
         if not in_str:
             return ""  # Consider defaulting to No Information or No Data to match TV Guides
 

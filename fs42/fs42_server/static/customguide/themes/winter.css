@@ -1,0 +1,140 @@
+/* Winter - a look laid over the base theme (00s), picked with the Guide Theme
+   setting: snowy grey-whites with a touch of blue over a snowy porch, a slate
+   TV Guide button and provider logo hung with icicles, and a string of
+   Christmas lights round the preview that blink on and off. Artwork lives in
+   themes/winter/. */
+:root {
+  --bg-color: transparent;
+  --text-color: #f4f8fc;
+  --text-panel-bg: transparent;
+  --text-panel-color: #f4f8fc;
+  --video-panel-bg: transparent;
+  --text-panel-title-color: #cfe4f7;
+
+  /* channel column: dark slate, so the white channel logos stay clear */
+  --grid-channel-bg: #2f3a46;
+  --channel-number-color: #f4f8fc;
+  --channel-name-color: #f4f8fc;
+  --channel-pill-radius: 0.3em;
+
+  /* grid chrome: snowy blocks, bevelled like the base theme's */
+  --grid-header-bg: #26313c;
+  --time-slot-bg: transparent;
+  --time-heading-color: #f4f8fc;
+  --grid-row-odd-bg: #b9c6d3;
+  --grid-row-even-bg: #b1bfcd;
+  --program-block-bg: #dde6ee;
+  --program-block-border: #f8fbfe;
+  --program-block-even-bg: #d3dde7;
+  --program-block-even-border: #f1f6fb;
+  --program-block-shadow: #8e9dae;
+  --program-current-bg: #c6d7e8;
+  --program-current-border: #eef6ff;
+  --program-current-color: #12324f;
+  /* the base theme only uses a dark colour for what's on now when this is set */
+  --current-show-title-color: #12324f;
+  --show-title-color: #1f2b38;
+  --program-desc-color: #2e3c4b;
+
+  /* the selected show: icy blue */
+  --nav-selected-bg: #8fbfe6;
+  --nav-selected-border: #ffffff;
+  --nav-selected-color: #0f2338;
+
+  /* the lights round the preview: the picture sits in the frame's opening, this
+     far in from each edge (fractions of the panel) - keep these in step with the
+     opening in winter/lights_frame.svg (see winter/make_lights_frame.py) */
+  --video-inset-x: 0.06;
+  --video-inset-top: 0.09756;
+  --video-inset-bottom: 0.09756;
+  /* panel shape that leaves a 16:9 opening once the frame is taken off */
+  --video-aspect-ratio: 1.626;
+}
+
+/* the porch, already softened and darkened a touch in the picture itself */
+body {
+  background: url("winter/wallpaper.jpg") center / cover no-repeat fixed, #6d7a88;
+}
+
+/* the show info sits straight on the porch, with a heavy shadow to keep it readable */
+#top-panel {
+  background: transparent;
+}
+
+#text-panel, #text-panel * {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 0, 0, 0.55);
+}
+
+/* the provider logo in the show-title ice blue, hung with icicles - whichever one
+   the Provider Logo setting picks */
+#info-logo img[src$="/directv.svg"] { content: url("winter/logos/directv.png"); }
+#info-logo img[src$="/comcast.svg"] { content: url("winter/logos/comcast.png"); }
+#info-logo img[src$="/dish.svg"] { content: url("winter/logos/dish.png"); }
+
+/* the icicles add 45% to each image's height below the logo itself (see
+   winter/make_icicles.py) - let them hang below without moving anything else */
+#info-logo img {
+  height: calc(7em * 1.45);
+  margin-bottom: calc(7em * -0.45);
+  object-position: 50% 0;
+}
+
+#info-brand img {
+  height: calc(5em * 1.45);
+  max-width: none;
+  margin-bottom: calc(5em * -0.45);
+  object-position: 50% 0;
+}
+
+#info-logo img, #info-brand img {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+}
+
+/* the lights - the panel's own fill is replaced by the frame (it has a black
+   opening): the band, wire and unlit bulbs underneath, and the lit bulbs that
+   blink on a layer of their own over them. Both images run 30 of their 1000 x
+   615 units past the panel on every side, so the outermost bulbs and their glow
+   aren't sliced off */
+#video-panel {
+  position: relative;
+  overflow: visible;
+  background: transparent !important;
+}
+
+#video-panel::before,
+#video-panel::after {
+  content: "";
+  position: absolute;
+  left: -3%;
+  right: -3%;
+  top: -4.878%;
+  bottom: -4.878%;
+  background: url("winter/lights_frame.svg") 0 0 / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+#video-panel::after {
+  background-image: url("winter/lights_on.svg");
+}
+
+/* a guide without a live preview plays its own video - keep that in the opening too */
+#video-panel video {
+  position: absolute;
+  left: calc(var(--video-inset-x) * 100%);
+  right: calc(var(--video-inset-x) * 100%);
+  top: calc(var(--video-inset-top) * 100%);
+  bottom: calc(var(--video-inset-bottom) * 100%);
+  width: auto;
+  height: auto;
+}
+
+/* the TV Guide logo as a slate button */
+#info-brand img {
+  content: url("winter/guide_logo.png");
+}
+
+/* the selected show: frosty ice blue, lighter at the top */
+.grid-program-block.nav-cell,
+.grid-program-block.current.nav-cell {
+  background: linear-gradient(to bottom, #b9daf5, #79acd8) !important;
+}

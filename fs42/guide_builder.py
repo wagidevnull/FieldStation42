@@ -12,7 +12,7 @@ from fs42.metadata_io import MetadataIO
 
 def normalize_video_title(title):
     custom_patterns = StationManager().server_conf.get("title_patterns", [])
-    return TitleParser.parse_title(title, custom_patterns)
+    return TitleParser.parse_title(title, custom_patterns, aliases=StationManager().server_conf.get("title_aliases"))
 
 
 def metadata_title_for_block(programming_block):

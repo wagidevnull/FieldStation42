@@ -435,7 +435,18 @@ class MediaProcessor:
         return break_points
 
     @staticmethod
-    def black_detect(fname, base_duration, black_min_duration=0.1, black_pixel_tresh=0.1, black_ratio_thresh=0.95):
+    def chapters_mark_breaks(chapters, content_duration):
+        """True when chapter markers split the episode itself - not just the intro
+        and credits off it, as a lot of rips' chapters do, which would put every
+        commercial break right after the theme song or just before the end."""
+        if not chapters or not content_duration:
+            return False
+        low, high = content_duration * 0.15, content_duration * 0.85
+        return any(low < c["chapter_start"] < high for c in chapters)
+
+    @staticmethod
+    def black_detect(fname, base_duration, black_min_duration=0.1, black_pixel_tresh=0.1, black_ratio_thresh=0.95,
+                     max_bytes_per_sec=None):
         def min_segment(break_points):
             spx = sorted(break_points, key=lambda x: x["segment_duration"])
             return spx[0]["segment_duration"]
@@ -449,9 +460,19 @@ class MediaProcessor:
         _l.info(f"Detecting black frames in {fname}")
 
         try:
-            # Build the ffmpeg command with blackdetect filter
+            # Build the ffmpeg command with blackdetect filter - video only, and skipping
+            # the frames nothing else references, which finds the same fades to black
+            # with about half the decoding
+            input_args = {"skip_frame:v": "noref"}
+            # a scan reads the whole file as fast as it can decode it - over a network
+            # share that can take the whole link and stall playback, so it can be held
+            # to a byte rate (as a multiple of the file's own playback speed)
+            if max_bytes_per_sec and base_duration:
+                bytes_per_sec = os.path.getsize(fname) / base_duration
+                input_args["readrate"] = max(1.0, round(max_bytes_per_sec / bytes_per_sec, 2))
             filter_complex = (
-                ffmpeg.input(fname)
+                ffmpeg.input(fname, **input_args)
+                .video
                 .filter("blackdetect", d=black_min_duration, pix_th=black_pixel_tresh, pic_th=black_ratio_thresh)
                 .output("pipe:", format="null")
             )
@@ -511,6 +532,9 @@ class MediaProcessor:
                     "chapter_start": prev_point,
                     "chapter_end": base_duration,
                 })
+            else:
+                # nothing to cut at - say so, so the file isn't scanned again
+                return []
 
             segmented = MediaProcessor.calc_black_segments(segments, base_duration)
 

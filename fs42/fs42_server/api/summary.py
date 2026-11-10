@@ -34,7 +34,9 @@ def get_channels():
             "network_long_name": station.get("network_long_name", ""),
             "channel_number": station["channel_number"],
             "hidden": station.get("hidden", False),
-            "has_schedule": station.get("_has_schedule", False),
+            # a YouTube playlist channel is a web channel, but it has a lineup for the guide
+            "has_schedule": station.get("_has_schedule", False) or bool(station.get("youtube_playlists")),
+            "channel_logo": f"/static/logos/{station['channel_logo']}" if station.get("channel_logo") else None,
         }
         for station in StationManager().stations
     ]

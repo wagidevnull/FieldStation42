@@ -41,18 +41,27 @@ USE_SYSTEMCTL = True
 DEFAULT_KEY_MAPPINGS = {
     # Remote control functions
     'show_guide': 'home',        # Show program guide
+    'show_settings': 'menu',     # Open/close the settings menu
+    'show_info': 'info',         # Show/hide the channel banner
     'volume_up': 'right',        # Increase volume
     'volume_down': 'left',       # Decrease volume
     'channel_up': 'up',          # Next channel
     'channel_down': 'down',      # Previous channel
     'navigation_up': 'pageup',   # Next item on web channels (PPV)
     'navigation_down': 'pagedown', # Previous item on web channels (PPV)
+    'navigation_left': 'comma',  # Back in time in the guide (left/right arrows are volume)
+    'navigation_right': 'dot',   # Forward in time in the guide
     'confirm': 'enter',          # Select item on web channels (PPV)
-    'last_channel': 'backspace', # Switch to last channel
+    'last_channel': 'backspace', # Switch to last channel (in the guide or menu: back to the channel)
+    'close_guide': 'x',          # EXIT - from the guide or menu, back to the channel
     'mute': 'm',                 # Mute/unmute volume
     'toggle_subtitles': 'v',      # Toggle subtitle visibility in mpv
-    'cycle_subtitles': 'j',       # Cycle subtitle tracks in mpv
-    'cycle_audio': 'a',           # Cycle audio tracks in mpv
+    'cycle_subtitles': 'j',       # Blue button - pick subtitles (map your remote's blue key here)
+    'cycle_audio': 'a',           # Yellow button - pick the audio track (map your remote's yellow key here)
+    'play': 'p',                  # On-demand movies: play (back to normal speed)
+    'pause': 'k',                 # On-demand movies: pause (press again to play)
+    'fast_forward': 'f',          # On-demand movies: fast forward - each press goes faster
+    'rewind': 'r',                # On-demand movies: rewind - each press goes faster
     'power_stop': 'end',         # Stop player (power button)
     'exit': 'esc',               # Exit remote controller
 
@@ -148,6 +157,17 @@ def should_allow_press(function_name, debounce_time=DEBOUNCE_TIME):
             return False
 
 
+def show_channel_entry(digits):
+    """Put the number typed so far up on the TV, with a blinking cursor for the next digit."""
+    def post():
+        try:
+            requests.post(f'{FS42_BASE_URL}/player/channel_entry/{digits}', timeout=2)
+        except Exception as e:
+            print(f"Channel entry display error: {e}")
+    # off the input thread, so typing never waits on the player
+    threading.Thread(target=post, daemon=True).start()
+
+
 def send_channel_change():
     """Send accumulated channel input to the server"""
     global channel_input, channel_input_timer, current_channel, last_channel
@@ -208,6 +228,8 @@ def number_pressed(number):
 
     if send_parental_digit_if_active(number):
         return
+    if send_menu_digit_if_open(number):
+        return
 
     with input_lock:
         # Cancel any existing timer
@@ -219,6 +241,7 @@ def number_pressed(number):
         channel_input += str(number)
         print(f"Channel input: {channel_input}")
         write_press_socket(channel_input)
+        show_channel_entry(channel_input)
         
         # If we have 3 digits, send immediately
         if len(channel_input) >= 3:
@@ -248,6 +271,57 @@ def show_guide_pressed():
             print("Guide command failed")
     except Exception as e:
         print(f"Guide error: {e}")
+
+
+def send_menu_digit_if_open(number):
+    """While the settings menu is up, a number key types into it (a ZIP code)
+    instead of changing channel."""
+    try:
+        status_response = requests.get(f'{FS42_BASE_URL}/player/status', timeout=2)
+        if not status_response.ok:
+            return False
+        status = status_response.json()
+        if not status.get("settings_menu"):
+            return False
+        response = requests.post(f'{FS42_BASE_URL}/ppv/{status["channel_number"]}/key/{number}', timeout=2)
+        if response.ok:
+            print(f"Settings menu digit entered: {number}")
+            return True
+        print(f"Settings menu digit failed: {response.status_code}")
+        return False
+    except Exception as e:
+        print(f"Settings menu digit error: {e}")
+        return False
+
+
+def show_settings_pressed():
+    """Open the on-TV settings menu, or close it if it is already open"""
+    if not should_allow_press('show_settings'):
+        return  # Debounced - ignore this press
+
+    try:
+        response = requests.post(f'{FS42_BASE_URL}/player/channels/settings')
+        if response.ok:
+            print("Settings menu toggled")
+        else:
+            print("Settings menu command failed")
+    except Exception as e:
+        print(f"Settings menu error: {e}")
+
+
+def show_info_pressed():
+    """Bring up the channel banner on the TV, or hide it if it is showing"""
+    if not should_allow_press('show_info'):
+        return  # Debounced - ignore this press
+
+    try:
+        response = requests.post(f'{FS42_BASE_URL}/player/banner')
+        if response.ok:
+            print("Channel banner toggled")
+        else:
+            print("Channel banner command failed")
+    except Exception as e:
+        print(f"Channel banner error: {e}")
 
 
 def volume_up_pressed():
@@ -412,10 +486,39 @@ def channel_down_pressed():
         print(f"Channel down error: {e}")
 
 
+def close_if_open():
+    """With the guide or the settings menu up, go back to the channel that was on
+    before it - or from an on-demand movie, back to its menu. Returns whether one was up."""
+    global current_channel
+    try:
+        status = requests.get(f'{FS42_BASE_URL}/player/status', timeout=2).json()
+        if not (status.get("guide") or status.get("settings_menu") or status.get("content_type") == "on_demand"):
+            return False
+        if requests.post(f'{FS42_BASE_URL}/player/channels/close', timeout=2).ok:
+            print("Closed the guide/menu - back to the channel")
+            # the player knows which channel that is; look it up next time it matters
+            current_channel = None
+        return True
+    except Exception as e:
+        print(f"Close error: {e}")
+        return False
+
+
+def close_guide_pressed():
+    """EXIT: from the guide or the settings menu, back to the channel"""
+    if not should_allow_press('close_guide'):
+        return
+    if not close_if_open():
+        print("Nothing to close")
+
+
 def last_channel_pressed():
-    """Handle last channel key press"""
+    """Handle last channel key press - in the guide or the menu, BACK goes back to
+    the channel instead"""
     if not should_allow_press('last_channel'):
         return  # Debounced - ignore this press
+    if close_if_open():
+        return
 
     global current_channel, last_channel
     if last_channel is not None:
@@ -612,6 +715,10 @@ def handle_key_name(key_name):
             print(f"DEBUG: Matched function: {function_name}")
             if function_name == 'show_guide':
                 show_guide_pressed()
+            elif function_name == 'show_settings':
+                show_settings_pressed()
+            elif function_name == 'show_info':
+                show_info_pressed()
             elif function_name == 'volume_up':
                 volume_up_pressed()
             elif function_name == 'volume_down':
@@ -624,6 +731,8 @@ def handle_key_name(key_name):
                 mpv_command_pressed('cycle_subtitles')
             elif function_name == 'cycle_audio':
                 mpv_command_pressed('cycle_audio')
+            elif function_name in ('play', 'pause', 'fast_forward', 'rewind'):
+                trick_pressed(function_name)
             elif function_name == 'channel_up':
                 channel_up_pressed()
             elif function_name == 'channel_down':
@@ -632,10 +741,16 @@ def handle_key_name(key_name):
                 nav_key_pressed('navigation_up', 'PageUp')
             elif function_name == 'navigation_down':
                 nav_key_pressed('navigation_down', 'PageDown')
+            elif function_name == 'navigation_left':
+                nav_key_pressed('navigation_left', 'ArrowLeft')
+            elif function_name == 'navigation_right':
+                nav_key_pressed('navigation_right', 'ArrowRight')
             elif function_name == 'confirm':
                 nav_key_pressed('confirm', 'Enter')
             elif function_name == 'last_channel':
                 last_channel_pressed()
+            elif function_name == 'close_guide':
+                close_guide_pressed()
             elif function_name == 'power_stop':
                 if USE_SYSTEMCTL:
                     toggle_services()
@@ -919,6 +1034,12 @@ Environment variables:
                     continue
 
             device = InputDevice(device_path)
+            # a Flirc is a keyboard to the system - take it, so its key presses only
+            # reach FS42 and don't also land in whatever window has focus
+            try:
+                device.grab()
+            except OSError as e:
+                print(f"Could not take exclusive use of {device.name}: {e}")
 
             print(f"Listening for remote control commands from: {device.name}")
 
@@ -952,6 +1073,17 @@ Environment variables:
             print(f"Error: {e}")
             sys.exit(1)
 
+
+
+def trick_pressed(action):
+    """Play/pause/fast forward/rewind for an on-demand movie (the player ignores it otherwise)"""
+    if not should_allow_press(action):
+        return
+    try:
+        response = requests.post(f'{FS42_BASE_URL}/player/trick/{action}', timeout=2)
+        print(f"Trick play {action}: {'sent' if response.ok else response.status_code}")
+    except Exception as e:
+        print(f"Trick play error for {action}: {e}")
 
 
 def mpv_command_pressed(action):

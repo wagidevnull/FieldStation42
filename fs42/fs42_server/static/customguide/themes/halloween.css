@@ -1,0 +1,135 @@
+/* Halloween - a seasonal look laid over the base theme (00s), picked with the
+   Guide Theme setting. Artwork lives in themes/halloween/. */
+:root {
+  /* night-blue grid with a purple sky above it */
+  --bg-color: #1c2a86;
+  --text-panel-bg: #1d1f72;
+  --video-panel-bg: #1d1f72;
+  --text-panel-title-color: #ff9a1f;
+
+  /* channel column: green call signs on a dark slab */
+  --grid-channel-bg: #0d0b3d;
+  --channel-number-color: #8dff32;
+  --channel-name-color: #8dff32;
+  --channel-pill-radius: 0.25em;
+
+  /* grid chrome */
+  --grid-header-bg: #0d0b3d;
+  --time-slot-bg: transparent;
+  --time-heading-color: #ffffff;
+  --grid-row-odd-bg: #1c2a86;
+  --grid-row-even-bg: #1a2678;
+  --program-block-bg: #2338b4;
+  --program-block-border: #5c78ff;
+  --program-block-even-bg: #1f32a2;
+  --program-block-even-border: #4f6bf0;
+  --program-block-shadow: #0d0b3d;
+  --program-current-bg: #2a44cc;
+  --program-current-border: #7d95ff;
+
+  /* pumpkin-orange selection */
+  --nav-selected-bg: #ff8c1a;
+  --nav-selected-border: #ffe14a;
+  --nav-selected-color: #2a0d00;
+
+  /* the slime frame around the preview: the video sits in the frame's opening,
+     which is this far in from each edge (fractions of the panel) - keep these in
+     step with the opening in halloween/slime_frame.svg */
+  --video-inset-x: 0.03;
+  --video-inset-top: 0.05;
+  --video-inset-bottom: 0.1167;
+  /* panel shape that leaves a 16:9 opening once the frame is taken off */
+  --video-aspect-ratio: 1.576;
+}
+
+/* behind the grid: the night darkens toward the treeline, with tiny stars */
+body {
+  background: url("halloween/stars.svg") repeat,
+              linear-gradient(to bottom, #1c2a86 0%, #141d66 55%, #0b0f3d 100%) fixed;
+}
+
+/* a spider web in the top left corner, behind the provider logo */
+#text-panel {
+  background: url("halloween/spider_web.svg") top left / auto 24.4vh no-repeat,
+              url("halloween/scene.svg") top center / 100% auto no-repeat,
+              url("halloween/stars.svg") repeat,
+              var(--text-panel-bg);
+}
+
+/* the provider logo in pumpkin orange - whichever one the Provider Logo setting picks */
+#info-logo img[src$="/directv.svg"] { content: url("halloween/logos/directv.svg"); }
+#info-logo img[src$="/comcast.svg"] { content: url("halloween/logos/comcast.svg"); }
+#info-logo img[src$="/dish.svg"] { content: url("halloween/logos/dish.svg"); }
+
+/* the panel's own black fill is replaced by the frame (it has a black opening) */
+#video-panel {
+  background: url("halloween/slime_frame.svg") 0 0 / 100% 100% no-repeat, var(--video-panel-bg) !important;
+}
+
+/* a guide without a live preview plays its own video - keep that in the opening too */
+#video-panel {
+  position: relative;
+}
+
+#video-panel video {
+  position: absolute;
+  left: calc(var(--video-inset-x) * 100%);
+  right: calc(var(--video-inset-x) * 100%);
+  top: calc(var(--video-inset-top) * 100%);
+  bottom: calc(var(--video-inset-bottom) * 100%);
+  width: auto;
+  height: auto;
+}
+
+.grid-program-block.nav-cell,
+.grid-program-block.current.nav-cell {
+  background: linear-gradient(to bottom, #ffb347, #ff7a00) !important;
+  box-shadow: inset 0 0 0 2px var(--nav-selected-border), 0 0 0.6em rgba(255, 140, 0, 0.7) !important;
+}
+
+/* slime "guide" stands in for the TV Guide logo */
+#info-brand img {
+  content: url("halloween/guide_logo.svg");
+  height: 5.5em;
+  max-width: 12em;
+}
+
+/* channel logos go slime green to match the call signs - the plain one-colour SVGs
+   (Adult Swim, Apple TV, Crave); colour ones like CNN's red SVG, ABC's black-and-white
+   disc, NBC's peacock, the NHL shield or The Weather Channel's PNG keep their colours */
+.grid-channel .channel-logo[src$=".svg"]:not([src$="/cnn.svg"]):not([src$="/abc.svg"]):not([src$="/nbc.svg"]):not([src$="/nhl.svg"]) {
+  filter: brightness(0) saturate(100%) invert(84%) sepia(60%) saturate(1200%) hue-rotate(36deg) brightness(104%);
+}
+
+/* grass, woods and jack-o-lanterns along the bottom of the screen. It sits behind
+   the guide, so the grid rows cut the tall trees off; the grid stops short of the
+   bottom so the grass and pumpkins stay in full view */
+#grid-wrapper {
+  margin-bottom: 12vh;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 23vh;
+  background: url("halloween/footer.svg") bottom center / 100% 100% no-repeat;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* the weather sits under the slime "guide", beside the preview, so it stays clear
+   of the haunted house in the scene */
+#info-right {
+  position: relative;
+}
+
+#info-weather {
+  position: absolute;
+  top: calc(100% + 0.3em);
+  right: 0;
+  width: 12em;
+  justify-content: center;
+}

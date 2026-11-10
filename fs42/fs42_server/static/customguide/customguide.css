@@ -275,6 +275,10 @@ body {
 .grid-channel-stub #clock {
   font-family: var(--clock-font, var(--font-family));
   font-size: 0.75em;
+  /* some fonts' capitals and figures sit high in their line - --caps-nudge (set by
+     the theme) moves them down to the middle */
+  position: relative;
+  top: var(--caps-nudge, 0em);
 }
 
 .grid-time-slot {
@@ -283,10 +287,12 @@ body {
   color: var(--time-heading-color);
   font-weight: bold;
   font-size: 0.9em;
-  padding: 0.2em 0.4em;
+  padding: calc(0.2em + var(--caps-nudge, 0em)) 0.4em calc(0.2em - var(--caps-nudge, 0em));
   white-space: nowrap;
   overflow: hidden;
   align-self: stretch;
+  display: flex;
+  align-items: center;
   border-radius: var(--time-slot-radius, 0);
   background-color: var(--time-slot-bg, transparent);
   box-shadow: inset 3px 3px 0 var(--program-block-border, transparent),
@@ -323,13 +329,16 @@ body {
   background-color: var(--grid-row-even-bg, #0b0606);
 }
 
+/* the channel number on the left, its logo (or name) beside it on the right */
 .grid-channel {
   width: var(--grid-channel-width, 6.5em);
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-direction: row;
+  justify-content: space-between;
   align-items: center;
+  gap: 0.35em;
+  box-sizing: border-box;
   padding: 0 0.4em;
   margin: var(--channel-pill-margin-v, 0) var(--channel-pill-margin-h, 0);
   border-radius: var(--channel-pill-radius, 0);
@@ -343,7 +352,11 @@ body {
   font-family: var(--channel-number-font, var(--font-family));
   color: var(--channel-number-color);
   font-weight: bold;
-  text-align: center;
+  font-size: 1.1em;
+  /* room for two digits, so the logos all line up */
+  min-width: 1.3em;
+  flex-shrink: 0;
+  text-align: left;
   padding-top: var(--channel-padding-top);
 }
 
@@ -361,7 +374,8 @@ body {
   text-overflow: ellipsis;
   font-size: 0.78em;
   text-align: center;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .grid-programs {
@@ -443,3 +457,301 @@ body {
     );
 }
 
+
+/* interactive navigation - the selected program cell (themes can override the --nav-* vars) */
+.grid-program-block.nav-cell,
+.grid-program-block.current.nav-cell {
+  background-color: var(--nav-selected-bg, #ffaa00) !important;
+  box-shadow: inset 0 0 0 2px var(--nav-selected-border, #ffffff) !important;
+}
+
+.grid-program-block.nav-cell .program-title,
+.grid-program-block.nav-cell .program-desc {
+  color: var(--nav-selected-color, #0a1e50) !important;
+}
+
+.grid-row.nav-tuning {
+  opacity: 0.6;
+}
+
+/* interactive guide info panel - describes the selected channel */
+#text-panel.info-mode {
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 0.25em;
+}
+
+#info-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: 0.6em;
+}
+
+#info-logo img {
+  display: block;
+  height: 7em;
+  width: auto;
+  max-width: 18em;
+  object-fit: contain;
+}
+
+#info-logo.text-logo {
+  font-family: var(--title-font, var(--font-family));
+  font-size: 1.6em;
+  font-weight: bold;
+  font-style: italic;
+  color: var(--text-panel-title-color, #ffdd44);
+}
+
+#info-right {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+
+#info-brand img {
+  display: block;
+  height: 5em;
+  width: auto;
+  max-width: 8em;
+  object-fit: contain;
+}
+
+/* current conditions, left of the clock: the icon with the temperature beside it */
+#info-weather {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+#info-weather[hidden] {
+  display: none;
+}
+
+#info-weather img {
+  height: 3.6em;
+  width: auto;
+  /* the icons are small pixel art - keep their pixels sharp when scaled up */
+  image-rendering: pixelated;
+}
+
+#info-temp {
+  font-weight: bold;
+  font-size: 1.9em;
+  line-height: 1;
+}
+
+#info-datetime {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+#info-time {
+  font-size: 1.5em;
+}
+
+#info-channel {
+  font-size: 1.5em;
+  font-weight: bold;
+  opacity: 0.85;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+#info-channel img {
+  height: 1.4em;
+  width: auto;
+}
+
+.grid-channel .channel-logo {
+  flex: 1;
+  min-width: 0;
+  height: 1.8em;
+  object-fit: contain;
+  padding-bottom: var(--channel-padding-bottom);
+}
+
+#info-title {
+  font-family: var(--title-font, var(--font-family));
+  color: var(--text-panel-title-color, #ffdd44);
+  font-size: 2.4em;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#info-episode,
+#info-times {
+  font-size: 1.5em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#info-desc {
+  font-size: 1em;
+  line-height: 1.4;
+  opacity: 0.85;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* with a description the panel is fuller, so everything above it steps down a size */
+#text-panel.has-desc #info-logo img {
+  height: 6em;
+  max-width: 16em;
+}
+
+#text-panel.has-desc #info-channel,
+#text-panel.has-desc #info-episode,
+#text-panel.has-desc #info-times {
+  font-size: 1.3em;
+}
+
+#text-panel.has-desc #info-title {
+  font-size: 2em;
+}
+
+/* ===== AUTO-TUNE ===== */
+
+/* a program with an auto-tune set */
+.grid-program-block.autotune::after {
+  content: "AUTO";
+  position: absolute;
+  top: 0.3em;
+  right: 0.4em;
+  padding: 0.05em 0.35em;
+  border-radius: 0.25em;
+  font-size: 0.55em;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  background: var(--nav-selected-bg, #ffaa00);
+  color: var(--nav-selected-color, #0a1e50);
+}
+
+.grid-program-block.autotune.nav-cell::after {
+  background: var(--nav-selected-color, #0a1e50);
+  color: var(--nav-selected-bg, #ffaa00);
+}
+
+/* the menu dims and covers the guide - only the preview stays in view above it */
+#autotune-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+body.autotune-open #video-panel {
+  position: relative;
+  z-index: 1001;
+}
+
+#autotune-dialog {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(62vw, 100% - 4vw);
+  padding: 1.6vh 2.2vw 1.4vh;
+  box-sizing: border-box;
+  background: var(--grid-channel-bg, #0a1e50);
+  border: 0.35vh solid var(--nav-selected-bg, #ffaa00);
+  border-radius: 1vh;
+  box-shadow: 0 0 3vh rgba(0, 0, 0, 0.8);
+  color: #ffffff;
+  font-family: var(--font-family);
+  font-size: 2.6vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8vh;
+}
+
+#autotune-dialog .at-heading {
+  font-size: 1.1em;
+  font-weight: bold;
+  color: var(--nav-selected-bg, #ffaa00);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#autotune-dialog .at-channel {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-weight: bold;
+}
+
+#autotune-dialog .at-channel img {
+  height: 1.6em;
+  max-width: 5em;
+  object-fit: contain;
+}
+
+#autotune-dialog .at-title {
+  font-size: 1.6em;
+  font-weight: bold;
+  line-height: 1.15;
+}
+
+#autotune-dialog .at-question {
+  margin-top: 0.6vh;
+}
+
+#autotune-dialog .at-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6vh;
+  margin-top: 0.6vh;
+}
+
+#autotune-dialog .at-option {
+  padding: 0.6vh 1em;
+  border-radius: 0.6vh;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: bold;
+}
+
+#autotune-dialog .at-option.cursor {
+  background: var(--nav-selected-bg, #ffaa00);
+  color: var(--nav-selected-color, #0a1e50);
+  box-shadow: inset 0 0 0 0.25vh var(--nav-selected-border, #ffffff);
+}
+
+#autotune-dialog .at-hint {
+  margin-top: 0.4vh;
+  font-size: 0.75em;
+  opacity: 0.75;
+  text-align: center;
+  white-space: pre;
+}
+
+#autotune-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 4vh;
+  transform: translateX(-50%);
+  z-index: 1002;
+  padding: 1vh 1.6vw;
+  border-radius: 0.8vh;
+  background: var(--nav-selected-bg, #ffaa00);
+  color: var(--nav-selected-color, #0a1e50);
+  font-family: var(--font-family);
+  font-size: 2.4vh;
+  font-weight: bold;
+}
+
+/* extras only some looks use (the DirecTV look turns them on) */
+#guide-footer,
+#video-badge {
+  display: none;
+}

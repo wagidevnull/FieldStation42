@@ -4,6 +4,7 @@ import argparse
 import time
 import datetime
 import json
+import os
 import shelve
 import signal
 import logging
@@ -75,6 +76,16 @@ def input_check():
                 case "web_key":
                     key = q_message.get("key", "")
                     return PlayerOutcome(PlayerState.SUCCESS, f"web_key:{key}")
+                case "settings" | "settings_close" | "close":
+                    # the main loop knows which channel to go back to, so pass it along
+                    return PlayerOutcome(PlayerState.CHANNEL_CHANGE, json.dumps({"command": command}))
+                case "banner":
+                    return PlayerOutcome(PlayerState.SUCCESS, "banner")
+                case "apply_settings":
+                    return PlayerOutcome(PlayerState.SUCCESS, "apply_settings")
+                case "guide_preview":
+                    rect = q_message.get("rect", "")
+                    return PlayerOutcome(PlayerState.SUCCESS, f"preview_rect:{rect}")
                 case "mpv_command":
                     action = q_message.get("action", "")
                     return PlayerOutcome(PlayerState.SUCCESS, f"mpv_command:{action}")
@@ -83,6 +94,17 @@ def input_check():
                     return PlayerOutcome(PlayerState.SUCCESS, f"parental_digit:{digit}")
                 case "parental_clear":
                     return PlayerOutcome(PlayerState.SUCCESS, "parental_clear")
+                case "channel_entry":
+                    digits = "".join(c for c in str(q_message.get("digits", "")) if c.isdigit())
+                    return PlayerOutcome(PlayerState.SUCCESS, f"entry:{digits}")
+                case "volume_osd":
+                    level = int(q_message.get("level", 0))
+                    muted = 1 if q_message.get("muted") else 0
+                    return PlayerOutcome(PlayerState.SUCCESS, f"volume:{level}:{muted}")
+                case "trick":
+                    # play/pause/ff/rewind - only an on-demand movie acts on it
+                    action = q_message.get("action", "")
+                    return PlayerOutcome(PlayerState.SUCCESS, f"trick:{action}")
 
 
     channel_socket = StationManager().server_conf["channel_socket"]
@@ -130,14 +152,19 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
         )
         return
 
-    channel_index = 0
+    # with nothing else to go on, start on the lowest numbered channel that's watchable
+    visible = [i for i, station in enumerate(manager.stations) if not station.get("hidden")]
+    channel_index = min(visible, key=lambda i: manager.stations[i]["channel_number"]) if visible else 0
     # if they specified a start channel, just use that
     start_channel_config = StationManager().server_conf.get("start_channel", None)
     if not start_channel_config:
         use_saved = StationManager().server_conf.get("recall_last_channel", True)
         if use_saved:
             with shelve.open(STATE_SHELVE) as s:
-                channel_index = s.get("channel_index", 0)
+                saved_number = s.get("channel_number")
+            saved_index = manager.index_from_channel(saved_number) if saved_number is not None else None
+            if saved_index is not None and not manager.stations[saved_index].get("hidden"):
+                channel_index = saved_index
     else:
         channel_index = manager.index_from_channel(start_channel_config)
         if not channel_index:
@@ -150,6 +177,8 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
         channel_index = 0
 
     player = StationPlayer(manager.stations[channel_index], input_check)
+    if not manager.stations[channel_index].get("hidden"):
+        player.last_channel = manager.stations[channel_index]["channel_number"]
     if schedule_lock:
         player.schedule_lock = schedule_lock
     stand_by = StationManager().server_conf.get("standby_image", "runtime/standby.png")
@@ -176,9 +205,12 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
     signal.signal(signal.SIGTERM, signal_handler)
 
     channel_conf = manager.stations[channel_index]
+    # the channel the settings menu goes back to when it closes
+    settings_return_channel = None
 
     # this is actually the main loop
     player_state = None
+    player.banner_pending = True
     skip_play = False
     stuck_timer = 0
 
@@ -191,6 +223,9 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
         if channel_conf["network_type"] == "guide" and not skip_play:
             logger.info("Starting the guide channel")
             player_state = player.show_guide(channel_conf)
+        elif player.plays_youtube(channel_conf) and not skip_play:
+            logger.info("Starting a YouTube channel")
+            player_state = player.play_youtube(channel_conf["network_name"])
         elif channel_conf["network_type"] == "web" and not skip_play:
             logger.info("Starting the web channel")
             player_state = player.show_web(channel_conf)
@@ -220,9 +255,22 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
 
         if player_state.status == PlayerState.CHANNEL_CHANGE:
             stuck_timer = 0
+            # the guide opens on the last real channel watched - not the guide or menu itself
+            if not channel_conf.get("hidden"):
+                player.last_channel = channel_conf["channel_number"]
+            # every tune - remote, guide, or leaving the menu - gets the channel banner
+            player.banner_pending = True
+            # leaving the menu goes back to a channel that never stopped, so skip the static
+            leaving_menu = False
             player.parental_unlocked_network = None
-            # Close any lingering pop-up overlay
+            # Close any lingering pop-up overlay, and the number typed to get here
             player._close_now_playing()
+            player.channel_entry.hide()
+            # leaving the PPV channel (or a movie on it) forgets where its menu was
+            try:
+                os.remove("runtime/ppv_menu_state.json")
+            except OSError:
+                pass
             # Cache stations to prevent race conditions during reload
             station_cache = manager.stations
             stations_len = len(station_cache)
@@ -253,6 +301,42 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
                                 logger.critical(
                                     "Got direct tune command, but no channel specified"
                                 )
+                        elif as_obj["command"] == "close":
+                            # BACK or EXIT from the guide or the menu: back to the channel
+                            # that was on before (the remote only sends it when one is up)
+                            tune_up = False
+                            settings_conf = manager.settings_config
+                            guide_conf = manager.guide_config
+                            target = None
+                            if settings_conf is not None and channel_conf["channel_number"] == settings_conf["channel_number"]:
+                                # tuned straight to the menu by number: back to the last real channel
+                                target = settings_return_channel or player.last_channel
+                            elif guide_conf is not None and channel_conf["channel_number"] == guide_conf["channel_number"]:
+                                target = player.last_channel
+                            if target is not None:
+                                new_index = manager.index_from_channel(target)
+                                if new_index is not None:
+                                    channel_index = new_index
+                                    # it kept playing under the guide or menu - no static
+                                    leaving_menu = True
+                        elif as_obj["command"] in ("settings", "settings_close"):
+                            tune_up = False
+                            settings_conf = manager.settings_config
+                            on_settings = settings_conf is not None and channel_conf["channel_number"] == settings_conf["channel_number"]
+                            target = None
+                            if settings_conf is None:
+                                logger.warning("Settings menu channel not configured")
+                            elif on_settings:
+                                # the menu button toggles, and close always goes back
+                                target = settings_return_channel or player.last_channel
+                                leaving_menu = True
+                            elif as_obj["command"] == "settings":
+                                settings_return_channel = channel_conf["channel_number"]
+                                target = settings_conf["channel_number"]
+                            if target is not None:
+                                new_index = manager.index_from_channel(target)
+                                if new_index is not None:
+                                    channel_index = new_index
                         elif as_obj["command"] == "up":
                             tune_up = True
                             logger.debug("Got channel up command")
@@ -283,14 +367,19 @@ def main_loop(transition_fn, shutdown_queue=None, api_proc=None, schedule_lock=N
                     channel_index = channel_index if channel_index < stations_len else 0
                     found = not station_cache[channel_index]["hidden"]
 
-            # save the player state
-            with shelve.open(STATE_SHELVE) as s:
-                s["channel_index"] = channel_index
+            # save the player state - a real channel, by number, so the TV comes back up
+            # on it (not in the guide or settings menu) even if channels are renumbered
+            if not station_cache[channel_index].get("hidden"):
+                with shelve.open(STATE_SHELVE) as s:
+                    s["channel_number"] = station_cache[channel_index]["channel_number"]
             channel_conf = station_cache[channel_index]
             player.station_config = channel_conf
+            # a web channel kept running for the guide or menu closes once we go elsewhere
+            player.release_parked_web(keep_for=channel_conf)
 
             # long_change_effect(player, reception)
-            transition_fn(player, reception)
+            if not leaving_menu:
+                transition_fn(player, reception)
 
         elif player_state.status == PlayerState.PARENTAL_CONTROLS:
             stuck_timer = 0

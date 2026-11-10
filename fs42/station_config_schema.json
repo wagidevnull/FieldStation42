@@ -324,6 +324,41 @@
           "type": "string",
           "description": "URL for web-type networks"
         },
+        "channel_logo": {
+          "type": "string",
+          "description": "Logo shown in the channel banner and the guide - a .svg or .png file in fs42/fs42_server/static/logos/"
+        },
+        "fit_screen": {
+          "type": "boolean",
+          "description": "Size the web window to the screen's current resolution instead of using width/height (web networks only)."
+        },
+        "keep_playing": {
+          "type": "boolean",
+          "description": "Keep the current channel playing (and heard) behind this web channel, so it carries on when the page closes - used by the settings menu (web networks only)."
+        },
+        "gpu_rendering": {
+          "type": "boolean",
+          "description": "Render this web channel with the GPU instead of in software - for pages that play full-screen video, which software rendering can't keep up with (web networks only)."
+        },
+        "youtube_playlists": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "YouTube playlist ids for a web channel that plays them on a daily shuffled schedule the guide can list (see fs42/youtube_channel.py). Its web_url is static/youtubechannel/youtubechannel.html?network=<network_name>."
+        },
+        "youtube_exclude": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Leave out videos on a youtube_playlists channel whose title contains any of these words or phrases (any case) - like \"NHL in ASL\" for the sign-language broadcasts."
+        },
+        "youtube_end_trim": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Seconds cut from the end of every video on a youtube_playlists channel, so it moves on before the creator's end screen shows (default 20). Takes effect for lineups made after the change."
+        },
+        "guide_preview": {
+          "type": "boolean",
+          "description": "Keep the current channel playing while this web channel is shown, so a custom guide opened with preview=1 can display it in its video panel (web networks only)."
+        },
         "refresh_interval": {
           "type": "number",
           "minimum": 0,

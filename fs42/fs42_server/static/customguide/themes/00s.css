@@ -30,7 +30,7 @@
   --video-panel-bg: #1a3a78;
   --text-panel-bg: #1a3a78;
   --text-panel-color: #ffffff;
-  --text-panel-title-color: #ffdd44;
+  --text-panel-title-color: #ffaa00;
   --text-carousel-speed: 10;
 
   /* grid header */
@@ -40,7 +40,7 @@
 
   /* channel pill — red, rounded */
   --grid-channel-bg: #bb1122;
-  --grid-channel-width: 5.25em;
+  --grid-channel-width: 6.5em;
   --channel-pill-radius: 0.4em;
   --channel-pill-margin-v: 4px;
   --channel-pill-margin-h: 4px;
@@ -64,7 +64,9 @@
   --program-current-color: #ffffff;
 
   /* type */
-  --font-family: 'Arial', 'Helvetica Neue', sans-serif;
+  --font-family: 'Trade Gothic LT Std', 'Arial', 'Helvetica Neue', sans-serif;
+  /* Trade Gothic's capitals and figures fill the top 0.72em of a line */
+  --caps-nudge: 0.14em;
   --font-size: 1.3rem;
   --h-padding: 1.5%;
   --v-padding: 1.5%;

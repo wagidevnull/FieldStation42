@@ -1,0 +1,841 @@
+/* Pay-Per-View menu. Sized from the screen height (1rem = 1/54 of it, 20px at 1080p)
+   so it reads the same at any resolution; fs42_aspect.js narrows the page for a 4:3
+   set. The colours follow the guide's look (body[data-look]), so the menu and the
+   guide always match; anything not listed gets the classic navy and gold. */
+
+:root {
+    --panel-solid: #0b1433;
+    --accent: #ffc23a;              /* headings and highlights */
+    --text: #f4f1e8;
+    --muted: rgba(244, 241, 232, 0.72);
+    --panel: rgba(8, 14, 40, 0.78);
+    --panel-border: rgba(255, 194, 58, 0.35);
+    --row: rgba(255, 255, 255, 0.04);
+    --selected-bg: #f5ac22;
+    --selected-text: #2a1300;
+    --selected-glow: rgba(255, 194, 58, 0.55);
+    --shade: linear-gradient(90deg, rgba(4, 8, 24, 0.94) 0%, rgba(4, 8, 24, 0.82) 38%, rgba(4, 8, 24, 0.55) 100%);
+    --shade-bottom: rgba(4, 8, 24, 0.9);
+    --tag-bg: #c4172a;
+    --tag-text: #fff;
+    --heading-font: 'Trade Gothic LT Std', 'Helvetica', 'Nimbus Sans', Arial, sans-serif;
+    --body-font: 'Trade Gothic LT Std', 'Helvetica', 'Nimbus Sans', Arial, sans-serif;
+    --radius: 0.5rem;
+    --caps-pad: 0.28em;      /* twice the shift: the box centres what's below the padding */
+    --caps-nudge: 0.14em;
+}
+
+body[data-look="fall"] {
+    --panel-solid: #2a1709;
+    --accent: #e39a55;
+    --text: #f6ead8;
+    --muted: rgba(246, 234, 216, 0.72);
+    --panel: rgba(36, 20, 10, 0.8);
+    --panel-border: rgba(227, 154, 85, 0.4);
+    --selected-bg: #c97a38;
+    --selected-text: #2a1406;
+    --selected-glow: rgba(227, 154, 85, 0.5);
+    --shade: linear-gradient(90deg, rgba(26, 13, 5, 0.95) 0%, rgba(26, 13, 5, 0.82) 38%, rgba(26, 13, 5, 0.5) 100%);
+    --shade-bottom: rgba(26, 13, 5, 0.92);
+    --tag-bg: #8a3d16;
+}
+
+body[data-look="frutiger"] {
+    --panel-solid: rgba(12, 58, 96, 0.55);
+    --panel-blur: blur(0.6rem);
+    --accent: #b6f56f;
+    --text: #ffffff;
+    --muted: rgba(235, 248, 255, 0.8);
+    --panel: rgba(12, 58, 96, 0.55);
+    --panel-border: rgba(190, 240, 255, 0.55);
+    --selected-bg: linear-gradient(180deg, #7fd8f5 0%, #3aa6d6 48%, #2183b4 52%, #2f9ccc 100%);
+    --selected-text: #ffffff;
+    --selected-glow: rgba(127, 216, 245, 0.6);
+    --shade: linear-gradient(90deg, rgba(4, 40, 74, 0.9) 0%, rgba(4, 40, 74, 0.7) 38%, rgba(4, 40, 74, 0.35) 100%);
+    --shade-bottom: rgba(4, 40, 74, 0.85);
+    --tag-bg: #4fa82a;
+    --heading-font: 'Segoe UI', 'Segoe UI This', 'Helvetica', 'Nimbus Sans', sans-serif;
+    --body-font: 'Segoe UI', 'Segoe UI This', 'Helvetica', 'Nimbus Sans', sans-serif;
+    --radius: 0.9rem;
+    --caps-pad: 0em;
+    --caps-nudge: 0em;
+}
+
+body[data-look="winter"] {
+    --panel-solid: #16263d;
+    --accent: #cfe4f7;
+    --text: #f4f8fc;
+    --muted: rgba(244, 248, 252, 0.75);
+    --panel: rgba(18, 32, 52, 0.75);
+    --panel-border: rgba(207, 228, 247, 0.45);
+    --selected-bg: #9fc9ea;
+    --selected-text: #0f2338;
+    --selected-glow: rgba(207, 228, 247, 0.55);
+    --shade: linear-gradient(90deg, rgba(10, 20, 36, 0.94) 0%, rgba(10, 20, 36, 0.8) 38%, rgba(10, 20, 36, 0.45) 100%);
+    --shade-bottom: rgba(10, 20, 36, 0.9);
+    --tag-bg: #b3202f;
+}
+
+body[data-look="halloween"] {
+    --panel-solid: #120f4a;
+    --accent: #ff9a1f;
+    --text: #fff3e0;
+    --muted: rgba(255, 243, 224, 0.72);
+    --panel: rgba(13, 11, 61, 0.8);
+    --panel-border: rgba(255, 154, 31, 0.45);
+    --selected-bg: #ff961f;
+    --selected-text: #2a0d00;
+    --selected-glow: rgba(255, 140, 26, 0.6);
+    --shade: linear-gradient(90deg, rgba(10, 6, 30, 0.95) 0%, rgba(10, 6, 30, 0.82) 38%, rgba(10, 6, 30, 0.5) 100%);
+    --shade-bottom: rgba(10, 6, 30, 0.92);
+    --tag-bg: #6a1fa8;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { font-size: calc(100vh / 54); }
+
+body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #05070f;
+    color: var(--text);
+    font-family: var(--body-font);
+    position: relative;
+}
+
+/* two layers so one backdrop fades into the next */
+.backdrop {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 20%;
+    opacity: 0;
+    transition: opacity 0.9s ease;
+    transform: scale(1.03);
+}
+.backdrop.shown { opacity: 1; }
+
+.shade {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(0deg, var(--shade-bottom) 0%, transparent 30%),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, transparent 22%),
+        var(--shade);
+}
+
+header.top, main, footer.hints { position: relative; z-index: 1; }
+
+/* ---- top bar ---- */
+header.top {
+    display: flex;
+    align-items: center;
+    gap: 1.4rem;
+    padding: 2rem 3.2rem 0;
+    height: 8.5rem;
+}
+.channel-logo {
+    height: 5.6rem;
+    filter: drop-shadow(0 0.3rem 0.5rem rgba(0, 0, 0, 0.6));
+}
+.channel-name .name {
+    font-family: var(--heading-font);
+    font-weight: 700;
+    font-size: 3rem;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.7);
+}
+.channel-name .tagline {
+    font-family: var(--heading-font);
+    font-size: 1.5rem;
+    color: var(--accent);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-top: 0.3rem;
+}
+.clock {
+    margin-left: auto;
+    text-align: right;
+    font-family: var(--heading-font);
+    text-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.7);
+}
+.clock .time { font-size: 2.6rem; font-weight: 600; line-height: 1; }
+.clock .date { font-size: 1.3rem; color: var(--muted); letter-spacing: 0.12em; margin-top: 0.3rem; }
+
+/* ---- main ---- */
+main {
+    display: flex;
+    gap: 3rem;
+    padding: 2rem 3.2rem 0 0;
+    height: 39.5rem;
+}
+
+.shelf {
+    flex: 0 0 34%;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-solid);
+    border: 0.1rem solid var(--panel-border);
+    border-left: none;
+    backdrop-filter: var(--panel-blur, none);
+    box-shadow: 0 0.6rem 2rem rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+.shelf-heading {
+    font-family: var(--heading-font);
+    font-size: 1.4rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding: 1rem 1.4rem 0.8rem 3.2rem;
+    border-bottom: 0.1rem solid var(--panel-border);
+    display: flex;
+    justify-content: space-between;
+}
+.shelf-heading #counter { color: var(--muted); letter-spacing: 0.06em; }
+
+.list-window {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    /* the rows fade out at the top and bottom edges */
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+}
+.list {
+    list-style: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+}
+.list li {
+    height: 3.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0 1.4rem 0 3.2rem;
+    font-size: 1.55rem;
+    white-space: nowrap;
+    overflow: hidden;
+    color: var(--muted);
+}
+.list li:nth-child(odd) { background: var(--row); }
+.list li .row-title { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.list li .row-year { font-size: 1.2rem; opacity: 0.7; }
+.list li.selected {
+    background: var(--selected-bg);
+    color: var(--selected-text);
+    font-weight: 700;
+}
+.list li.selected .row-year { opacity: 0.85; }
+.list li.selected::before { content: '▶'; font-size: 1rem; margin-left: -1.9rem; margin-right: 0.3rem; }
+
+/* 5. a long title on the highlighted row scrolls across to show all of it */
+.list li .row-title.scrolling { text-overflow: clip; }
+.list li .row-title .scroller { display: inline-block; }
+
+/* ---- the selected movie ---- */
+.feature {
+    flex: 1;
+    display: flex;
+    gap: 2.6rem;
+    align-items: stretch;
+    min-width: 0;
+}
+.poster-frame {
+    /* centred on the movie list beside it, however tall the poster comes out */
+    align-self: center;
+    flex: 0 0 auto;
+    width: min(24.67rem, 40%);
+    aspect-ratio: 2 / 3;
+    border-radius: var(--radius);
+    overflow: hidden;
+    position: relative;
+    background: rgba(0, 0, 0, 0.4);
+    border: 0.15rem solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 1rem 2.6rem rgba(0, 0, 0, 0.7);
+}
+.poster {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: opacity 0.35s ease;
+}
+.poster.swapping { opacity: 0; }
+.no-poster {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+    font-family: var(--heading-font);
+    font-size: 2.4rem;
+    color: var(--accent);
+    background: var(--panel);
+}
+.no-poster.shown { display: flex; }
+
+.details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: 0.6rem;
+}
+.tags { display: flex; align-items: center; gap: 1rem; min-height: 2.2rem; }
+.tag {
+    background: var(--tag-bg);
+    color: var(--tag-text);
+    font-family: var(--heading-font);
+    font-size: 1.15rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.8rem;
+    border-radius: 0.3rem;
+}
+.tag:empty { display: none; }
+.year {
+    font-family: var(--heading-font);
+    font-size: 1.6rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+}
+.title {
+    font-family: var(--heading-font);
+    font-weight: 700;
+    font-size: 3.6rem;
+    line-height: 1.08;
+    margin: 0.6rem 0 1.2rem;
+    text-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.8);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.description {
+    font-size: 1.6rem;
+    line-height: 1.45;
+    color: var(--text);
+    text-shadow: 0 0.1rem 0.4rem rgba(0, 0, 0, 0.9);
+    display: -webkit-box;
+    -webkit-line-clamp: 7;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 48rem;
+}
+
+.order {
+    margin-top: auto;
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    padding: 0.9rem 1.6rem;
+    font-size: 1.9rem;
+    font-family: var(--heading-font);
+    letter-spacing: 0.04em;
+    background: var(--panel-solid);
+    border: 0.12rem solid var(--panel-border);
+    box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.45);
+    backdrop-filter: var(--panel-blur, none);
+    text-transform: uppercase;
+}
+.order .key { font-size: 1.6rem; margin-right: 0.8rem; }
+
+.key {
+    /* every key box the same height; capitals pushed down by --caps-pad so they sit
+       in the middle (Trade Gothic's capitals fill only the top of their line) */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    box-sizing: border-box;
+    height: 1.8em;
+    line-height: 1;
+    vertical-align: middle;
+    font-family: var(--heading-font);
+    font-size: 0.85em;
+    letter-spacing: 0.08em;
+    padding: var(--caps-pad) 0.6em 0;
+    margin-right: 0.5rem;
+    border: 0.12rem solid var(--accent);
+    color: var(--accent);
+    background: var(--panel-solid);
+}
+.hint-label { position: relative; top: var(--caps-nudge); }
+
+/* ---- bottom hints ---- */
+footer.hints {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    gap: 3rem;
+    padding: 1.2rem 3.2rem 2rem;
+    font-size: 1.4rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+/* the hints sit on solid boxes too, so they read over any backdrop */
+footer.hints > span { display: inline-flex; align-items: center; }
+
+/* ---- "now starting" card after a pick ---- */
+.starting {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.starting.shown { opacity: 1; }
+.starting-card {
+    text-align: center;
+    padding: 2.6rem 5rem;
+    background: var(--panel);
+    border: 0.15rem solid var(--accent);
+    border-radius: var(--radius);
+    box-shadow: 0 0 3rem var(--selected-glow);
+}
+.starting-label {
+    font-family: var(--heading-font);
+    color: var(--accent);
+    font-size: 1.6rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+}
+.starting-title {
+    font-family: var(--heading-font);
+    font-weight: 700;
+    font-size: 4rem;
+    margin: 0.6rem 0;
+}
+.starting-sub { font-size: 1.5rem; color: var(--muted); }
+
+.loading {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--heading-font);
+    font-size: 2.4rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    background: #05070f;
+    transition: opacity 0.5s ease;
+}
+.loading.done { opacity: 0; pointer-events: none; }
+
+/* the browse arrows drawn as triangles, so they sit dead centre in their box */
+.key.arrows { padding: 0 0.6em; }
+.key.arrows i { width: 0; height: 0; border-left: 0.45rem solid transparent; border-right: 0.45rem solid transparent; }
+.key.arrows .up { border-bottom: 0.65rem solid var(--accent); }
+.key.arrows .down { border-top: 0.65rem solid var(--accent); }
+
+.key.arrow-right { padding: 0 0.55em; }
+.key.arrow-right i, .key.arrow-left i { width: 0; height: 0; border-top: 0.45rem solid transparent; border-bottom: 0.45rem solid transparent; }
+.key.arrow-right i { border-left: 0.65rem solid var(--accent); }
+.key.arrow-left { padding: 0 0.55em; }
+.key.arrow-left i { border-right: 0.65rem solid var(--accent); }
+
+/* ---- the full synopsis, over the menu ---- */
+.synopsis {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+.synopsis.shown { opacity: 1; }
+.synopsis-card {
+    display: flex;
+    gap: 2.6rem;
+    width: 80%;
+    max-height: 80%;
+    padding: 2.6rem 3rem;
+    background: var(--panel);
+    border: 0.15rem solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(0.8rem);
+}
+.synopsis-poster {
+    flex: 0 0 auto;
+    width: min(18rem, 28%);
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    align-self: flex-start;
+    border-radius: calc(var(--radius) * 0.8);
+    border: 0.12rem solid rgba(255, 255, 255, 0.25);
+}
+.synopsis-poster:not([src]) { display: none; }
+.synopsis-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.synopsis-title {
+    font-family: var(--heading-font);
+    font-weight: 700;
+    font-size: 3.4rem;
+    line-height: 1.05;
+    margin: 0.4rem 0 1.2rem;
+}
+.synopsis-body {
+    font-size: 1.7rem;
+    line-height: 1.5;
+    overflow: hidden;
+}
+.synopsis-hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2.4rem;
+    margin-top: auto;
+    padding-top: 1.6rem;
+    font-size: 1.4rem;
+    color: var(--muted);
+}
+
+[hidden] { display: none !important; }
+.synopsis-hints > span { display: inline-flex; align-items: center; }
+
+/* ---- DirecTV: the satellite box's own On Demand screen ----
+   The page is laid out on a grid: the DIRECTV ON DEMAND badge top left over the
+   list of titles, a dark blue panel across the top, the film's backdrop in a small
+   preview box top right with the channel number on it, and a "Movies" tab below
+   holding the poster and the film's details. */
+body[data-look="directv"] {
+  --accent: #f9a51b;
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.82);
+  --panel: #0c3a78;
+  --panel-solid: #0c3a78;
+  --panel-border: #6ea6db;
+  --selected-bg: #f9a51b;
+  --selected-text: #0b2c5e;
+  --selected-glow: transparent;
+  --tag-bg: #1f5fae;
+  --heading-font: 'Trade Gothic LT Std', 'Liberation Sans Narrow', Arial, sans-serif;
+  --body-font: 'Trade Gothic LT Std', 'Liberation Sans Narrow', Arial, sans-serif;
+  --radius: 0.5rem;
+  --navy: #0b2c5e;
+
+  display: grid;
+  grid-template-columns: 27vw 20vw 1fr 22vw;
+  grid-template-rows: 22vh 1fr auto;
+  column-gap: 1.2vw;
+  row-gap: 5.2vh;
+  padding: 3vh 2.6vw 2.6vh;
+  box-sizing: border-box;
+  background: url("directv_bg.svg") 0 0 / 100% 100% no-repeat, #dce9f5;
+  color: #ffffff;
+}
+body[data-look="directv"] header.top,
+body[data-look="directv"] main,
+body[data-look="directv"] .feature { display: contents; }
+body[data-look="directv"] .shade { display: none; }
+
+/* the DIRECTV ON DEMAND badge, in place of the channel's own logo and name */
+body[data-look="directv"] .channel-logo,
+body[data-look="directv"] .channel-name > * { display: none; }
+body[data-look="directv"] .channel-name {
+  grid-column: 1; grid-row: 1;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 15vh;
+  background: linear-gradient(180deg, #ffffff 0%, #eef4fa 100%);
+  border: 0.25vh solid #9fbfdf;
+  border-radius: 1.2vh;
+  box-shadow: 0 0.3vh 1vh rgba(20, 60, 110, 0.25);
+}
+body[data-look="directv"] .channel-name::before {
+  content: "";
+  width: 86%;
+  aspect-ratio: 420 / 140;
+  background: url("directv_ondemand.svg") center / contain no-repeat;
+}
+
+/* the dark blue panel across the top */
+body[data-look="directv"] header.top::before {
+  content: "DIRECTV on DEMAND";
+  grid-column: 2 / 4; grid-row: 1;
+  align-self: stretch;
+  padding: 2.2vh 1.6vw 0;
+  background: linear-gradient(180deg, #1a5aa6 0%, #0c3a78 100%);
+  border: 0.25vh solid #6ea6db;
+  border-radius: 1.2vh;
+  font: 700 3.6vh/1.1 var(--heading-font);
+  color: #ffffff;
+}
+body[data-look="directv"] header.top::after {
+  content: "Every movie and series in your library, ready when you are. Pick a title and press SELECT.";
+  grid-column: 2 / 4; grid-row: 1;
+  align-self: start;
+  margin-top: 7.6vh;
+  padding: 0 1.6vw;
+  font: 600 2.5vh/1.4 var(--body-font);
+  color: rgba(255, 255, 255, 0.9);
+}
+body[data-look="directv"] .clock { display: none; }
+
+/* the preview box: the film's backdrop, with the channel number in the corner */
+body[data-look="directv"] .backdrop {
+  grid-column: 4; grid-row: 1;
+  position: relative;
+  inset: auto;
+  transform: none;
+  border: 0.4vh solid #ffffff;
+  box-shadow: 0 0.3vh 1vh rgba(20, 60, 110, 0.35);
+  background-color: #000;
+}
+body[data-look="directv"]::after {
+  content: attr(data-channel);
+  grid-column: 4; grid-row: 1;
+  align-self: end; justify-self: end;
+  margin: 0 0.8vw 1vh 0;
+  padding: 0.2vh 0.6vw;
+  background: #ffffff;
+  color: #0b2c5e;
+  font: 700 2.6vh/1.2 var(--heading-font);
+  z-index: 2;
+}
+
+/* the list of titles, like the box's category list */
+body[data-look="directv"] .shelf {
+  grid-column: 1; grid-row: 2;
+  margin-top: -4.6vh;
+  background: #1f5fae;
+  border: 0.25vh solid #6ea6db;
+  border-radius: 1.2vh;
+  box-shadow: 0 0.3vh 1vh rgba(20, 60, 110, 0.3);
+}
+body[data-look="directv"] .shelf-heading {
+  background: #0b2c5e;
+  padding: 1vh 1.2vw;
+  border-bottom: 0.25vh solid #0b2c5e;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #ffffff;
+  font-weight: 700;
+}
+body[data-look="directv"] .shelf-heading #counter { color: rgba(255, 255, 255, 0.75); }
+/* the list box runs down level with the Movies panel, ending right at the hints strip;
+   --list-snap: 10 shares its height out among ten whole rows, so none is ever cut off */
+body[data-look="directv"] { --list-snap: 10; }
+body[data-look="directv"] .shelf { align-self: stretch; }
+body[data-look="directv"] .list-window { -webkit-mask-image: none; mask-image: none; }
+body[data-look="directv"] .list li { height: var(--row-h, 3.2rem); }
+body[data-look="directv"] .list li {
+  padding-left: 1.2vw;
+  color: #ffffff;
+  font-weight: 600;
+  border-bottom: 0.15vh solid rgba(11, 44, 94, 0.55);
+}
+body[data-look="directv"] .list li:nth-child(odd) { background: transparent; }
+body[data-look="directv"] .list li .row-year { opacity: 0.8; }
+body[data-look="directv"] .list li.selected {
+  background: #f9a51b;
+  color: #0b2c5e;
+  margin: 0;
+  padding-left: 1.2vw;
+  border-radius: 0;
+}
+body[data-look="directv"] .list li.selected::before { display: none; }
+
+/* the "Movies" tab and its panel */
+body[data-look="directv"] main::before {
+  content: "";
+  grid-column: 2 / 5; grid-row: 2;
+  margin-top: 0;
+  background: linear-gradient(180deg, #1a5aa6 0%, #0c3a78 100%);
+  border: 0.25vh solid #6ea6db;
+  border-radius: 0 1.2vh 1.2vh 1.2vh;
+  box-shadow: 0 0.3vh 1vh rgba(20, 60, 110, 0.3);
+}
+body[data-look="directv"] main::after {
+  content: attr(data-label);
+  grid-column: 2; grid-row: 2;
+  align-self: start; justify-self: start;
+  margin-top: -4.6vh;
+  height: 4.8vh;
+  padding: 0 1.4vw;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, #ffffff 0%, #dbe9f6 100%);
+  border: 0.25vh solid #6ea6db;
+  border-bottom: none;
+  border-radius: 1vh 1vh 0 0;
+  color: #0b2c5e;
+  font: 700 2.5vh/1 var(--heading-font);
+}
+body[data-look="directv"] .poster-frame {
+  grid-column: 2; grid-row: 2;
+  align-self: start;
+  width: calc(100% - 1.4vw);
+  margin: 2vh 0 0 1.4vw;
+  border: 0.4vh solid #ffffff;
+  border-radius: 0;
+  z-index: 1;
+}
+/* the film's details beside the poster, one under another */
+body[data-look="directv"] .details {
+  grid-column: 3 / 5; grid-row: 2;
+  z-index: 1;
+  height: auto;
+  padding: 2.2vh 1.6vw 2.4vh 0;
+}
+body[data-look="directv"] .title {
+  margin: 0.4vh 0 1.6vh;
+  font-size: 4.2vh;
+  color: #ffffff;
+}
+body[data-look="directv"] .description {
+  font-weight: 600;
+  -webkit-line-clamp: 6;
+}
+body[data-look="directv"] .year { color: rgba(255, 255, 255, 0.85); font-weight: 700; }
+body[data-look="directv"] .order {
+  margin-top: auto;
+  background: #f9a51b;
+  border: none;
+  color: #0b2c5e;
+  box-shadow: none;
+  font-weight: 700;
+}
+body[data-look="directv"] .order .key { background: #ffffff; border-color: #ffffff; color: #0b2c5e; }
+
+/* the hints along the bottom, on the pale background */
+body[data-look="directv"] footer.hints {
+  position: static;
+  grid-column: 2 / -1; grid-row: 3;
+  justify-content: flex-end;
+  gap: 2vw;
+  white-space: nowrap;
+  margin-top: -5.2vh;
+  padding: 1.2vh 1.6vw 1vh;
+  background: linear-gradient(180deg, #ffffff 0%, #dbe9f6 100%);
+  border: 0.25vh solid #6ea6db;
+  border-top: none;
+  border-radius: 0 0 1.2vh 1.2vh;
+  color: #0b2c5e;
+  font-size: 2.3vh;
+  font-weight: 700;
+}
+body[data-look="directv"] main::before { border-radius: 0 1.2vh 0 0; }
+body[data-look="directv"] .key {
+  background: #0b2c5e;
+  border-color: #0b2c5e;
+  color: #ffffff;
+  border-radius: 0.4vh;
+}
+body[data-look="directv"] .key.arrows .up { border-bottom-color: #ffffff; }
+body[data-look="directv"] .key.arrows .down { border-top-color: #ffffff; }
+body[data-look="directv"] .key.arrow-right i { border-left-color: #ffffff; }
+body[data-look="directv"] .key.arrow-left i { border-right-color: #ffffff; }
+
+/* a 4:3 set has less width - the hints come down a size to stay on one line */
+body[data-look="directv"].aspect-4-3 footer.hints { font-size: 1.9vh; gap: 1.4vw; }
+
+/* ---- tabs, series rows and notices ---- */
+.shelf-heading { align-items: baseline; gap: 1rem; letter-spacing: 0.1em; }
+.shelf-heading #counter { white-space: nowrap; }
+.order { white-space: nowrap; }
+.shelf-heading .tabs { display: flex; gap: 1.4rem; }
+.shelf-heading .tab { opacity: 0.45; }
+.shelf-heading .tab.active {
+    opacity: 1;
+    border-bottom: 0.18rem solid var(--accent);
+    padding-bottom: 0.15rem;
+}
+.shelf-heading .crumb {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-transform: none;
+    letter-spacing: 0.04em;
+}
+.shelf-heading #counter { flex: none; }
+.list li.random-row .row-title { font-weight: 700; }
+.list li.random-row:not(.selected) .row-title { color: var(--accent); }
+
+/* left/right arrows, for switching tabs */
+.key.arrows.sideways i { border-top: 0.45rem solid transparent; border-bottom: 0.45rem solid transparent; border-left: 0; border-right: 0; }
+.key.arrows.sideways .lt { border-right: 0.65rem solid var(--accent); }
+.key.arrows.sideways .rt { border-left: 0.65rem solid var(--accent); }
+
+.flash {
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    transform: translate(-50%, -50%);
+    z-index: 6;
+    padding: 1.4rem 2.6rem;
+    background: var(--panel-solid);
+    border: 0.15rem solid var(--accent);
+    color: var(--text);
+    font-family: var(--heading-font);
+    font-size: 2.4rem;
+    letter-spacing: 0.06em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.flash.shown { opacity: 1; }
+
+/* DirecTV: the tabs and keys in its colours */
+body[data-look="directv"] .shelf-heading .tab.active { border-bottom-color: #f9a51b; }
+body[data-look="directv"] .list li.random-row:not(.selected) .row-title { color: #ffd27a; }
+body[data-look="directv"] .key.arrows.sideways .lt { border-right-color: #ffffff; }
+body[data-look="directv"] .key.arrows.sideways .rt { border-left-color: #ffffff; }
+body[data-look="directv"] .flash { background: #0c3a78; border-color: #f9a51b; color: #fff; }
+
+/* the details panel's SELECT - yellow, so the eye goes to it: press it again to watch */
+.synopsis .key.key-go,
+body[data-look] .synopsis .key.key-go {
+    background: #ffd21f;
+    border-color: #ffd21f;
+    color: #1a1200;
+    box-shadow: 0 0 0.8rem rgba(255, 210, 31, 0.55);
+}
+.synopsis .key-go + .hint-label { color: #ffd21f; }
+
+/* ---- picture-in-picture: the last channel keeps playing in this box (the player
+   lays its video over it, inside the --pip-border, given in vh) ---- */
+:root { --pip-border: 0.3; }
+.pip {
+    flex: none;
+    height: 6.6rem;
+    aspect-ratio: 16 / 9;
+    margin-left: 1.6rem;
+    background: #000;
+    border: 0.3vh solid var(--panel-border);
+    box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.5);
+}
+.clock { margin-left: auto; }
+body[data-look="directv"] .pip { display: none; }
+body[data-look="directv"] { --pip-border: 0.4; }
+
+/* a 4:3 set is narrower - the header's tagline and clock come in a little to fit the PiP */
+body.aspect-4-3:not([data-look="directv"]) .channel-name .tagline { letter-spacing: 0.08em; white-space: nowrap; }
+body.aspect-4-3:not([data-look="directv"]) .clock .date { white-space: nowrap; letter-spacing: 0.04em; }

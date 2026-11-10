@@ -1,0 +1,176 @@
+/* Frutiger Aero - a look laid over the base theme (00s), picked with the Guide
+   Theme setting: dark Aero glass over a sunny meadow, a glossy green TV Guide
+   button and an Aero glass frame around the preview. Artwork lives in
+   themes/frutiger/. */
+:root {
+  --font-family: 'Segoe UI', 'Segoe UI This', 'Frutiger', 'DejaVu Sans', sans-serif;
+  --caps-nudge: 0em;
+
+  --bg-color: transparent;
+  --text-panel-bg: transparent;
+  --video-panel-bg: transparent;
+  --text-panel-title-color: #b6f56f;
+
+  /* channel column and listings: dark smoked glass */
+  --glass-dark: rgba(4, 16, 26, 0.74);
+  --glass-current: rgba(8, 30, 44, 0.78);
+  /* every pane's edge: a dark line outside, a bright one just inside it */
+  --glass-edge: inset 0 0 0 1px rgba(3, 18, 28, 0.85), inset 0 0 0 2px rgba(255, 255, 255, 0.38);
+  --glass-shine: linear-gradient(to bottom, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.03) 48%, rgba(255, 255, 255, 0) 52%);
+
+  --grid-channel-bg: var(--glass-dark);
+  --channel-number-color: #ffffff;
+  --channel-name-color: #d8f1ff;
+  --channel-pill-radius: 0.45em;
+
+  --grid-header-bg: transparent;
+  --time-slot-bg: transparent;
+  --time-heading-color: #ffffff;
+  --grid-row-odd-bg: transparent;
+  --grid-row-even-bg: transparent;
+  --row-divider-color: transparent;
+  --program-block-radius: 0.45em;
+  --program-block-bg: var(--glass-dark);
+  --program-block-border: transparent;
+  --program-block-even-bg: var(--glass-dark);
+  --program-block-even-border: transparent;
+  --program-block-shadow: transparent;
+  --program-current-bg: var(--glass-current);
+  --program-current-border: transparent;
+  --program-current-color: #ffffff;
+
+  --nav-selected-bg: #2f86ad;
+  --nav-selected-border: #ffffff;
+  --nav-selected-color: #ffffff;
+
+  /* the glass frame around the preview: the picture sits in the frame's opening,
+     this far in from each edge (fractions of the panel) - keep these in step
+     with the opening in frutiger/glass_frame.svg */
+  --video-inset-x: 0.025;
+  --video-inset-top: 0.04278;
+  --video-inset-bottom: 0.04278;
+  /* panel shape that leaves a 16:9 opening once the frame is taken off */
+  --video-aspect-ratio: 1.7112;
+}
+
+body {
+  background: url("frutiger/wallpaper.jpg") center / cover no-repeat fixed, #8cc7ef;
+}
+
+#top-panel {
+  background: transparent;
+  gap: 0.6em;
+  padding: 0.6em 0.6em 0.3em;
+  box-sizing: border-box;
+}
+
+/* the show info sits on its own pane of dark glass */
+#text-panel {
+  background: var(--glass-shine), var(--glass-dark);
+  border-radius: 0.7em;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--glass-edge), 0 0.3em 1em rgba(0, 30, 50, 0.35);
+}
+
+#text-panel, #text-panel * {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+/* the provider logo in the same lime as the show titles - whichever one the
+   Provider Logo setting picks */
+#info-logo img[src$="/directv.svg"] { content: url("frutiger/logos/directv.svg"); }
+#info-logo img[src$="/comcast.svg"] { content: url("frutiger/logos/comcast.svg"); }
+#info-logo img[src$="/dish.svg"] { content: url("frutiger/logos/dish.svg"); }
+
+/* the glass frame - the panel's own fill is replaced by the frame (it has a black
+   opening). The corners are rounded the same as the frame's: 12 of its 1000 x
+   584.4 units */
+#video-panel {
+  position: relative;
+  background: url("frutiger/glass_frame.svg") 0 0 / 100% 100% no-repeat, transparent !important;
+  border-radius: 1.2% / 2.053%;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0.3em 1.2em rgba(0, 30, 50, 0.4);
+}
+
+/* a guide without a live preview plays its own video - keep that in the opening too */
+#video-panel video {
+  position: absolute;
+  left: calc(var(--video-inset-x) * 100%);
+  right: calc(var(--video-inset-x) * 100%);
+  top: calc(var(--video-inset-top) * 100%);
+  bottom: calc(var(--video-inset-bottom) * 100%);
+  width: auto;
+  height: auto;
+}
+
+/* the TV Guide logo as a glossy green glass button */
+#info-brand img {
+  content: url("frutiger/guide_logo.png");
+  filter: drop-shadow(0 0.15em 0.35em rgba(0, 60, 20, 0.45));
+}
+
+#grid-wrapper {
+  padding: 0 0.6em 0.6em;
+}
+
+/* time bar: a strip of the same dark glass */
+#grid-header {
+  margin: 0 0 0.25em;
+  border-radius: 0.45em;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04) 50%, rgba(255, 255, 255, 0) 51%),
+              var(--glass-dark);
+  box-shadow: var(--glass-edge);
+}
+
+.grid-time-slot, .grid-channel-stub {
+  box-shadow: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* each listing and channel is its own small pane of glass, with gaps between
+   them so the meadow shows through */
+.grid-row {
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.grid-channel {
+  background-image: var(--glass-shine);
+  box-shadow: var(--glass-edge);
+  backdrop-filter: blur(6px);
+}
+
+/* listings sit edge to edge, so each keeps a clear 2px border as its gap; the glass
+   and both edge lines are drawn inside it, so they all share one rounded corner */
+.grid-program-block,
+.grid-row:nth-child(even) .grid-program-block,
+.grid-program-block.current {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-image: var(--glass-shine);
+  box-shadow: var(--glass-edge) !important;
+  backdrop-filter: blur(6px);
+}
+
+.grid-channel .channel-number,
+.grid-program-block .program-title,
+.grid-program-block .program-desc {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* the selected show: the frame's own blue-green glass, glossy, with a soft glow */
+.grid-program-block.nav-cell,
+.grid-program-block.current.nav-cell {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.1) 48%, rgba(255, 255, 255, 0) 52%),
+              linear-gradient(to bottom, #a9dcf0 0%, #5fb0d2 12%, #2f86ad 55%, #155f84 100%) !important;
+  background-clip: padding-box !important;
+  box-shadow: inset 0 0 0 1px rgba(3, 18, 28, 0.85),
+              inset 0 0 0 2px rgba(255, 255, 255, 0.7),
+              0 0 0.6em rgba(95, 176, 210, 0.85) !important;
+}
+
+.grid-program-block.nav-cell .program-title,
+.grid-program-block.nav-cell .program-desc {
+  text-shadow: 0 1px 2px rgba(0, 30, 50, 0.85);
+}

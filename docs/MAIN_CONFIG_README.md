@@ -44,6 +44,7 @@ The `confs/main_config.json` file is optional. If it doesn't exist, FieldStation
 | `db_path` | string | `"runtime/fs42_fluid.db"` | Path to the SQLite database |
 | `normalize_titles` | boolean | `false` | Enable automatic title normalization from filenames |
 | `title_patterns` | array | `[]` | Custom regex patterns for title parsing (see below) |
+| `title_aliases` | object | `{}` | Rename parsed titles for display, e.g. `{"Plur1bus": "Pluribus"}` |
 | `follow_static_symlinks` | boolean | `false` | Serve symlinks that point outside the static directories (see below) |
 
 ## Day Parts

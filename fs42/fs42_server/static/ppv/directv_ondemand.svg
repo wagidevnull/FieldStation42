@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 140">
+  <defs>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a86cf"/>
+      <stop offset="1" stop-color="#1c64ae"/>
+    </linearGradient>
+  </defs>
+  <!-- DIREC regular and a heavier TV, as on the box's own logo -->
+  <text x="210" y="66" text-anchor="middle" font-family="Trade Gothic LT Std" font-size="58" letter-spacing="4" fill="#1f5ea8" stroke="#1f5ea8" stroke-width="1.4" paint-order="stroke">DIREC<tspan stroke-width="3.8">TV</tspan></text>
+  <!-- the ON > DEMAND bar -->
+  <rect x="44" y="82" width="332" height="44" rx="6" fill="url(#bar)"/>
+  <g fill="#ffffff" font-family="Trade Gothic LT Std" font-size="32" letter-spacing="3" stroke="#ffffff" stroke-width="0.9">
+    <text x="94" y="115">ON</text>
+    <path d="M152 92 L170 104 L152 116 Z" stroke="none"/>
+    <text x="178" y="115">DEMAND</text>
+  </g>
+</svg>
