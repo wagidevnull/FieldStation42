@@ -46,6 +46,7 @@ The `confs/main_config.json` file is optional. If it doesn't exist, FieldStation
 | `title_patterns` | array | `[]` | Custom regex patterns for title parsing (see below) |
 | `title_aliases` | object | `{}` | Rename parsed titles for display, e.g. `{"Plur1bus": "Pluribus"}` |
 | `follow_static_symlinks` | boolean | `false` | Serve symlinks that point outside the static directories (see below) |
+| `api_key` | string | none | Requires this key for the web console and API. Not set means no security (see [API_SECURITY.md](API_SECURITY.md)) |
 
 ## Day Parts
 

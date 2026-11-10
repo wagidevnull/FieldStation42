@@ -554,7 +554,7 @@ class ShowCatalog:
         else:
             return None
 
-    def find_candidate(self, tag, seconds, when, exclusion_index=None, proposed_start=None, meta_hints=None):
+    def find_candidate(self, tag, seconds, when, exclusion_index=None, proposed_start=None, meta_hints=None, min_duration=None, max_duration=None):
         """Find the best candidate for a given tag and duration.
 
         exclusion_index: optional dict of {realpath: [(start, end), ...]} built from
@@ -576,6 +576,8 @@ class ShowCatalog:
                 # restrict content to fit and be valid (zero duration is likely not valid)
                 if (
                     seconds > candidate.duration >= 1
+                        and (min_duration is None or candidate.duration >= min_duration)
+                        and (max_duration is None or candidate.duration <= max_duration)
                         and MediaProcessor._test_candidate_hints(candidate.hints, when)
                 ):
                     # skip if a sibling channel is already playing this file in an
@@ -595,7 +597,15 @@ class ShowCatalog:
                     matches.append(candidate)
             #random.shuffle(matches)
             if not len(matches):
-                err = f"Could not find candidate video for tag={tag} under {seconds} in len - maybe add some shorter content?"
+                if min_duration is not None or max_duration is not None:
+                    low = f"{min_duration / 60:g}" if min_duration is not None else "0"
+                    high = f"{max_duration / 60:g}" if max_duration is not None else "any"
+                    err = (
+                        f"Could not find candidate video for tag={tag} between {low} and {high} minutes "
+                        f"- check the slot's min_duration/max_duration or add content in that range"
+                    )
+                else:
+                    err = f"Could not find candidate video for tag={tag} under {seconds} in len - maybe add some shorter content?"
                 raise (MatchingContentNotFound(err))
             result = self._lowest_count(matches)
             # note, this has been migrated

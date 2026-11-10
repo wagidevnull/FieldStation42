@@ -10,7 +10,7 @@ from urllib.parse import quote
 from fs42.station_manager import StationManager
 from fs42.nfo_agent import NFOAgent
 from .tmdb_helper import get_tmdb_helper
-from .player import connected_command_queue
+from .player import connected_command_queue, send_web_key
 
 router = APIRouter(prefix="/ppv", tags=["ppv"])
 
@@ -365,16 +365,7 @@ async def play_file(channel_number: int, play_request: PlayFileRequest, request:
             detail=f"Failed to send play command: {str(e)}"
         )
 
-@router.post("/{channel_number}/key/{key_name}")
+@router.post("/{channel_number}/key/{key_name}", deprecated=True)
 async def send_key(channel_number: int, key_name: str, request: Request):
-    """Send a keypress to the PPV web channel (or the settings menu, which takes
-    digits too, for typing a ZIP code)."""
-    allowed_keys = {"PageUp", "PageDown", "Enter", "ArrowLeft", "ArrowRight", *"0123456789"}
-    if key_name not in allowed_keys:
-        raise HTTPException(status_code=400, detail=f"Key must be one of: {allowed_keys}")
-    command_queue = connected_command_queue(request)
-    try:
-        command_queue.put({"command": "web_key", "key": key_name})
-        return {"success": True, "key": key_name}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Deprecated alias for POST /player/web/key/{key_name}."""
+    return await send_web_key(key_name, request)

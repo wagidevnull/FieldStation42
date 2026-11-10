@@ -13,6 +13,7 @@ from .settings import router as settings_router
 from .autotune import router as autotune_router
 from .youtube import router as youtube_router
 from .weather import router as weather_router
+from .manage import router as manage_router
 
 # Create a list of all routers to be included
 routers = [
@@ -30,4 +31,5 @@ routers = [
     autotune_router,
     youtube_router,
     weather_router,
+    manage_router,
 ]
